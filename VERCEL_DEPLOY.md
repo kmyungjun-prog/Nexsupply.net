@@ -6,18 +6,20 @@ Vercel이 모노레포 루트(`Nexsupply.net`)에서 빌드하려고 해서 `app
 
 ## 해결
 
-루트에 `vercel.json`을 추가하여 **모노레포 루트에서 `apps/web`를 빌드하도록** 설정했습니다.
+루트에 `vercel.json`을 추가하여 **Vercel 프로젝트의 Root Directory가 `apps/web`일 때** 정상 빌드되도록 설정했습니다.
 
 ```json
 {
-  "buildCommand": "cd apps/web && npm run build",
-  "outputDirectory": "apps/web/.next",
-  "installCommand": "cd apps/web && npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
   "framework": "nextjs"
 }
 ```
 
-**참고:** `vercel.json` 스키마에는 `rootDirectory` 속성이 없어서 사용하면 검증 단계에서 실패합니다. (대신 `cd apps/web` 방식 사용)
+**중요:** 위 설정은 **Vercel 대시보드에서 Root Directory를 `apps/web`로 설정**한 경우를 전제로 합니다. Root Directory가 레포 루트라면 `apps/web`로 `cd`하는 방식(또는 대시보드 설정 변경)이 필요합니다.
+
+또한 `vercel.json` 스키마에는 `rootDirectory` 속성이 없어서 사용하면 검증 단계에서 실패합니다.
 
 ## Vercel 대시보드 설정 (대안)
 
