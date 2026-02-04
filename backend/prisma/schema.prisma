@@ -1,0 +1,243 @@
+// NexSupply Phase-A (M1+M2 core) Prisma schema
+//
+// 핵심 불변성(Immutable Claims):
+// - `sourcing_claims`는 append-only 이며 UPDATE/DELETE를 절대 허용하지 않는다.
+// - Prisma 스키마만으로는 불변성을 완전히 강제할 수 없으므로,
+//   런타임에서 Prisma Client Proxy로 update/delete 계열 호출을 차단한다. (src/libs/db.ts)
+// - 운영 환경에서는 추가로 DB 트리거/권한으로 UPDATE/DELETE를 차단하는 것을 권장. (TODO)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  ANALYZING
+  WAITING_PAYMENT
+  BLUEPRINT_RUNNING
+  AUDIT_IN_PROGRESS
+  VERIFIED
+}
+
+// Claim의 성격(Hypothesis/User/Verified)
+enum ClaimType {
+  HYPOTHESIS
+  USER_PROVIDED
+  VERIFIED
+}
+
+// SOW 권한 모델: user | auditor | admin | system
+enum ActorRole {
+  user
+  auditor
+  admin
+  system
+}
+
+enum EvidenceVirusScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  ERROR
+}
+
+enum ClaimSourceType {
+  model
+  crawl
+  document
+  user
+  system
+  api
+}
+
+enum EventSource {
+  ui
+  slack
+  system
+}
+
+// SOW에서 제시된 credits_ledger reason 후보를 최소 반영
+enum CreditLedgerReason {
+  coupon
+  campaign
+  refund
+  adjustment
+  rollback
+}
+
+// SOW의 audit_actions.action_type 후보를 최소 반영
+// (Slack/결제/쿠폰 로직은 Non-goal이므로 "schema만" 유지하고 서비스 로직은 구현하지 않는다.)
+enum AuditActionType {
+  status_transition
+  claim_append
+  verify
+  reject
+  edit_note
+  request_more_docs
+  confirm_payment
+  coupon_redeem
+  credit_apply
+  pipeline_run
+  execution_approved
+  execution_marked_sent
+}
+
+model Project {
+  id                    String   @id @default(uuid()) @db.Uuid
+  ownerUserId           String
+  status                ProjectStatus @default(ANALYZING)
+
+  // TODO(M1): Blueprint 단계에서 프로젝트별 폴더 생성 및 권한/서명 URL 정책 적용
+  gcsFolderPath         String?
+  isPaidBlueprint       Boolean  @default(false)
+
+  // Resolved View 스냅샷 (Claim 조인/해석 결과를 JSONB로 캐시)
+  resolvedViewJsonb     Json?
+  resolvedViewUpdatedAt DateTime?
+
+  // Verified 시점 스냅샷(재현성 보장)
+  verifiedSnapshotJsonb Json?
+  verifiedAt            DateTime?
+  verifiedVersionId     String?  @db.Uuid
+
+  // "현재 작업 중인" claim version
+  activeVersionId       String?  @db.Uuid
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  claims                SourcingClaim[]
+  evidenceFiles         EvidenceFile[]
+  auditActions          AuditAction[]
+  statusEvents          ProjectStatusEvent[]
+  creditsLedger         CreditsLedger[]
+
+  @@index([ownerUserId])
+  @@index([status])
+  @@map("projects")
+}
+
+model SourcingClaim {
+  id              String    @id @default(uuid()) @db.Uuid
+  projectId       String    @db.Uuid
+  fieldKey        String
+  valueJson       Json
+  claimType       ClaimType
+  confidence      Float?
+  createdByRole   ActorRole
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+
+  // Optional metadata
+  currency        String?
+  unit            String?
+  sourceType      ClaimSourceType?
+  sourceRef       String?
+
+  // 버전 잠금용: Verified 이후 수정이 필요하면 새 versionId로 새 Claim을 발행한다.
+  versionId       String    @db.Uuid
+
+  // 권장: idempotency (재시도/중복 클릭 방지)
+  idempotencyKey  String?
+
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  evidenceLinks   ClaimEvidenceLink[]
+
+  @@index([projectId, createdAt])
+  @@index([projectId, versionId])
+  @@unique([projectId, idempotencyKey])
+  @@map("sourcing_claims")
+}
+
+model EvidenceFile {
+  id               String   @id @default(uuid()) @db.Uuid
+  projectId        String   @db.Uuid
+  gcsPath          String
+  mimeType         String
+  sha256           String
+  sizeBytes        BigInt
+  uploadedByUserId String
+  createdAt        DateTime @default(now())
+
+  originalFilename String?
+  virusScanStatus  EvidenceVirusScanStatus @default(PENDING)
+
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  claimLinks       ClaimEvidenceLink[]
+
+  @@index([projectId, createdAt])
+  @@index([sha256])
+  @@map("evidence_files")
+}
+
+model ClaimEvidenceLink {
+  claimId     String   @db.Uuid
+  evidenceId  String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  claim       SourcingClaim @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  evidence    EvidenceFile  @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+
+  @@id([claimId, evidenceId])
+  @@index([evidenceId])
+  @@map("claim_evidence_links")
+}
+
+model AuditAction {
+  id             String          @id @default(uuid()) @db.Uuid
+  projectId      String          @db.Uuid
+  actorId        String
+  actorRole      ActorRole
+  actionType     AuditActionType
+  note           String?
+  requestId      String?
+  idempotencyKey String?
+  createdAt      DateTime        @default(now())
+
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([projectId, idempotencyKey])
+  @@map("audit_actions")
+}
+
+model ProjectStatusEvent {
+  id             String        @id @default(uuid()) @db.Uuid
+  projectId      String        @db.Uuid
+  fromStatus     ProjectStatus
+  toStatus       ProjectStatus
+  actorId        String
+  actorRole      ActorRole
+  reason         String?
+  source         EventSource
+  idempotencyKey String
+  createdAt      DateTime      @default(now())
+
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+  @@unique([projectId, idempotencyKey])
+  @@map("project_status_events")
+}
+
+// Schema only for now (M6 이후 로직 구현)
+model CreditsLedger {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String
+  projectId   String?           @db.Uuid
+  amountCents Int
+  reason      CreditLedgerReason
+  sourceId    String?
+  createdAt   DateTime          @default(now())
+
+  project     Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@map("credits_ledger")
+}

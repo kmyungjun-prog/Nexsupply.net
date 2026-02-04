@@ -1,0 +1,31 @@
+{
+  "name": "nexsupply-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.18.0",
+    "@prisma/client": "^6.16.0",
+    "dotenv": "^17.2.0",
+    "fastify": "^5.6.0",
+    "firebase-admin": "^13.4.0",
+    "google-auth-library": "^9.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "prisma": "^6.16.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.2"
+  }
+}

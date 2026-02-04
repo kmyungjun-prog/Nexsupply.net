@@ -1,0 +1,124 @@
+import { randomUUID } from "crypto";
+import { ProjectStatus, type ActorRole } from "@prisma/client";
+import { db } from "../../libs/db.js";
+import { getSignedUrl } from "../../libs/storage.js";
+import { AppError } from "../../libs/errors.js";
+
+export type Actor = { uid: string; role: ActorRole };
+
+const PHOTO_UPLOAD_EXPIRES_SECONDS = 15 * 60;
+const PHOTO_ALLOWED_MIME = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+const PHOTO_MAX_SIZE_BYTES = 25 * 1024 * 1024;
+
+export async function createProject(input: { ownerUserId: string }) {
+  const project = await db.project.create({
+    data: {
+      ownerUserId: input.ownerUserId,
+      status: ProjectStatus.ANALYZING,
+      resolvedViewJsonb: {},
+    },
+  });
+  return project;
+}
+
+export async function getProjectForReport(projectId: string) {
+  return db.project.findUnique({
+    where: { id: projectId },
+    select: {
+      id: true,
+      status: true,
+      ownerUserId: true,
+      resolvedViewJsonb: true,
+      resolvedViewUpdatedAt: true,
+      createdAt: true,
+    },
+  });
+}
+
+export type InitiatePhotoResult = {
+  project_id: string;
+  upload_url: string;
+  upload_headers: Record<string, string>;
+  gcs_path: string;
+  upload_expires_at: string;
+};
+
+export async function initiatePhotoUpload(ownerUserId: string, mimeType: string): Promise<InitiatePhotoResult | null> {
+  if (!(PHOTO_ALLOWED_MIME as readonly string[]).includes(mimeType)) return null;
+  const project = await createProject({ ownerUserId });
+  const ext = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/png" ? "png" : mimeType === "image/gif" ? "gif" : "webp";
+  const gcsPath = `projects/${project.id}/photo/initial_${randomUUID().replace(/-/g, "").slice(0, 12)}.${ext}`;
+  const uploadUrl = await getSignedUrl({
+    action: "write",
+    gcsPath,
+    expiresInSeconds: PHOTO_UPLOAD_EXPIRES_SECONDS,
+    contentType: mimeType,
+  });
+  const expiresAt = new Date(Date.now() + PHOTO_UPLOAD_EXPIRES_SECONDS * 1000);
+  return {
+    project_id: project.id,
+    upload_url: uploadUrl,
+    upload_headers: { "Content-Type": mimeType },
+    gcs_path: gcsPath,
+    upload_expires_at: expiresAt.toISOString(),
+  };
+}
+
+export async function completePhotoUpload(
+  projectId: string,
+  body: { gcs_path: string; mime_type: string; size_bytes: number; original_filename?: string },
+  uid: string
+) {
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, ownerUserId: true } });
+  if (!project || project.ownerUserId !== uid) return null;
+  if (!body.gcs_path.startsWith(`projects/${projectId}/photo/`)) return null;
+  if (body.size_bytes > PHOTO_MAX_SIZE_BYTES) return null;
+  if (!(PHOTO_ALLOWED_MIME as readonly string[]).includes(body.mime_type)) return null;
+
+  await db.evidenceFile.create({
+    data: {
+      projectId,
+      gcsPath: body.gcs_path,
+      mimeType: body.mime_type,
+      sha256: "",
+      sizeBytes: BigInt(body.size_bytes),
+      originalFilename: body.original_filename ?? "photo",
+      uploadedByUserId: uid,
+    },
+  });
+
+  const resolvedViewJsonb = {
+    product_category: "General merchandise",
+    estimated_margin: { min: 12, max: 18, unit: "percent" },
+    _source: "photo_upload",
+  };
+  await db.project.update({
+    where: { id: projectId },
+    data: { resolvedViewJsonb: resolvedViewJsonb as object, resolvedViewUpdatedAt: new Date() },
+  });
+  return { project_id: projectId };
+}
+
+export async function listProjectsForActor(actor: Actor) {
+  if (actor.role === "admin" || actor.role === "auditor" || actor.role === "system") {
+    return db.project.findMany({ orderBy: { createdAt: "desc" } });
+  }
+  return db.project.findMany({
+    where: { ownerUserId: actor.uid },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function getProjectOrThrow(projectId: string) {
+  const project = await db.project.findUnique({ where: { id: projectId } });
+  if (!project) throw new AppError({ statusCode: 404, code: "NOT_FOUND", message: "Project not found" });
+  return project;
+}
+
+export function assertProjectAccess(project: { ownerUserId: string }, actor: Actor) {
+  if (actor.role === "admin" || actor.role === "auditor" || actor.role === "system") return;
+  if (project.ownerUserId !== actor.uid) {
+    throw new AppError({ statusCode: 403, code: "FORBIDDEN", message: "No access to this project" });
+  }
+}
+
