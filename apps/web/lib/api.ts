@@ -17,9 +17,17 @@ export async function get<T>(
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  const data = (await res.json().catch(() => ({}))) as { message?: string; error?: { message?: string } };
+  const raw = await res.text();
+  const data = (() => {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
   if (!res.ok) {
-    const msg = data?.error?.message ?? data?.message ?? res.statusText;
+    const err = data as { message?: string; error?: { message?: string } };
+    const msg = err?.error?.message ?? err?.message ?? (raw && raw.length < 200 ? raw : res.statusText);
     throw new Error(msg);
   }
   return data as T;
@@ -43,9 +51,16 @@ export async function post<T>(
     body: JSON.stringify(body),
     duplex: "half",
   } as RequestInit & { duplex: string });
-  const data = (await res.json().catch(() => ({}))) as { message?: string; error?: { message?: string } };
+  const raw = await res.text();
+  const data = (() => {
+    try {
+      return JSON.parse(raw) as { message?: string; error?: { message?: string } };
+    } catch {
+      return {};
+    }
+  })();
   if (!res.ok) {
-    const msg = data?.error?.message ?? data?.message ?? res.statusText;
+    const msg = data?.error?.message ?? data?.message ?? (raw && raw.length < 200 ? raw : res.statusText);
     throw new Error(msg);
   }
   return data as T;
