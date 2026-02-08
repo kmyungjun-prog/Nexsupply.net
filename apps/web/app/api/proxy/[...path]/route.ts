@@ -54,12 +54,13 @@ async function proxy(
   const contentType = request?.headers.get("content-type");
   if (contentType) headers["Content-Type"] = contentType;
 
-  const init: RequestInit = {
+  const init: RequestInit & { duplex?: "half" } = {
     method,
     headers,
   };
   if (request && (method === "POST" || method === "PUT") && request.body) {
     init.body = request.body;
+    init.duplex = "half";
   }
 
   try {
