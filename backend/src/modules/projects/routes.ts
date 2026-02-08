@@ -65,12 +65,19 @@ export async function registerProjectsRoutes(app: FastifyInstance) {
     },
     async (req) => {
       const body = req.body as { mime_type: string; size_bytes?: number };
-      const result = await initiatePhotoUpload(req.auth!.uid, body.mime_type);
-      if (!result) throw new AppError({ statusCode: 400, code: "VALIDATION_ERROR", message: "mime_type not allowed or invalid" });
-      if (body.size_bytes != null && body.size_bytes > 25 * 1024 * 1024) {
-        throw new AppError({ statusCode: 400, code: "VALIDATION_ERROR", message: "size_bytes exceeds maximum" });
+      try {
+        const result = await initiatePhotoUpload(req.auth!.uid, body.mime_type);
+        if (!result) throw new AppError({ statusCode: 400, code: "VALIDATION_ERROR", message: "mime_type not allowed or invalid" });
+        if (body.size_bytes != null && body.size_bytes > 25 * 1024 * 1024) {
+          throw new AppError({ statusCode: 400, code: "VALIDATION_ERROR", message: "size_bytes exceeds maximum" });
+        }
+        return result;
+      } catch (e) {
+        if (e instanceof AppError) throw e;
+        const msg = e instanceof Error ? e.message : String(e);
+        req.log.warn({ err: e }, "initiate-photo failed");
+        throw new AppError({ statusCode: 500, code: "INTERNAL", message: msg });
       }
-      return result;
     },
   );
 
@@ -95,9 +102,16 @@ export async function registerProjectsRoutes(app: FastifyInstance) {
     async (req) => {
       const { id: projectId } = req.params as { id: string };
       const body = req.body as { gcs_path: string; mime_type: string; size_bytes: number; original_filename?: string };
-      const result = await completePhotoUpload(projectId, body, req.auth!.uid);
-      if (!result) throw new AppError({ statusCode: 404, code: "NOT_FOUND", message: "Project not found or invalid" });
-      return result;
+      try {
+        const result = await completePhotoUpload(projectId, body, req.auth!.uid);
+        if (!result) throw new AppError({ statusCode: 404, code: "NOT_FOUND", message: "Project not found or invalid" });
+        return result;
+      } catch (e) {
+        if (e instanceof AppError) throw e;
+        const msg = e instanceof Error ? e.message : String(e);
+        req.log.warn({ err: e }, "photo/complete failed");
+        throw new AppError({ statusCode: 500, code: "INTERNAL", message: msg });
+      }
     },
   );
 

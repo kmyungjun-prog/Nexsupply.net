@@ -18,6 +18,12 @@ const dotenvCandidates = [
 const dotenvPath = dotenvCandidates.find((p) => fs.existsSync(p));
 dotenv.config(dotenvPath ? { path: dotenvPath } : undefined);
 
+// Prisma는 "empty host"를 허용하지 않음. Cloud SQL 소켓 형식(postgresql://...@/db?host=/cloudsql/...)
+// 은 호스트를 비워두는데, Prisma 호환을 위해 @/ 를 @localhost/ 로 치환한다.
+if (process.env.DATABASE_URL?.includes("@/")) {
+  process.env.DATABASE_URL = process.env.DATABASE_URL.replace("@/", "@localhost/");
+}
+
 const port = Number(process.env.PORT ?? 8080);
 
 async function main() {

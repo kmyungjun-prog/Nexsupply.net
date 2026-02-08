@@ -77,7 +77,7 @@
 
 ### 1) 환경 변수
 
-- `DATABASE_URL` (PostgreSQL)
+- `DATABASE_URL` (PostgreSQL). **Cloud SQL Unix 소켓** 사용 시: `postgresql://USER:PASSWORD@localhost/DATABASE?host=/cloudsql/PROJECT:REGION:INSTANCE` 형식 권장. `@/`(빈 호스트)는 Prisma가 허용하지 않아, 서버에서 자동으로 `@localhost/`로 치환함.
 - `FIREBASE_PROJECT_ID` (Firebase 프로젝트 ID)
 - **Phase-B**: `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `SLACK_PAYMENT_CHANNEL_ID` (Slack 미설정 시 결제 알림/버튼 비활성)
 - **Phase-C Lite**: `RAPIDAPI_KEY`, `RAPIDAPI_HOST` (1688 데이터; 미설정 시 스텁 후보 3건 반환)

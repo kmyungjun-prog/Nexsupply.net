@@ -177,9 +177,13 @@ export default function UploadPage() {
           <div className="alert alert-error mt-4">
             <p className="mb-2">{error}</p>
             {(error === "Internal server error" || error === "Internal Server Error") && (
-              <p className="text-muted mb-2" style={{ fontSize: "0.875rem" }}>
-                The backend may be misconfigured. Ensure <strong>GCS_BUCKET_NAME</strong>, <strong>GEMINI_API_KEY</strong>, and <strong>DATABASE_URL</strong> are set on the backend (e.g. Cloud Run).
-              </p>
+              <div className="text-muted mb-2" style={{ fontSize: "0.875rem" }}>
+                <p className="mb-1">To find the cause:</p>
+                <ul style={{ margin: "0 0 0 1rem", paddingLeft: "0.5rem" }}>
+                  <li>Open <strong>Google Cloud Console → Cloud Run → nexsupply-backend → Logs</strong>. Look for the error when you click Analyze.</li>
+                  <li>Typical causes: <strong>GCS</strong> — bucket <code>nexsupply-storage</code> must exist and the Cloud Run service account needs Storage Object Admin; <strong>DB</strong> — Cloud SQL must allow connections from Cloud Run (authorized networks or Connector).</li>
+                </ul>
+              </div>
             )}
             <button type="button" className="btn btn-ghost mt-2" onClick={() => { setError(null); setStepIndex(0); }}>
               Try again
