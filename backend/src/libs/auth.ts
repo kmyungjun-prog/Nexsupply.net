@@ -13,10 +13,22 @@ export type AuthContext = {
 function initFirebaseAdminOnce() {
   if (admin.apps.length > 0) return;
 
-  // TODO(M1): production에서는 Secret Manager 또는 Workload Identity로 자격 증명을 주입한다.
-  // 기본은 Google Application Default Credentials (ADC) 또는 FIREBASE_SERVICE_ACCOUNT_JSON 사용을 권장.
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (serviceAccountJson && typeof serviceAccountJson === "string") {
+    try {
+      const sa = JSON.parse(serviceAccountJson) as admin.ServiceAccount;
+      admin.initializeApp({
+        projectId: sa.project_id ?? process.env.FIREBASE_PROJECT_ID,
+        credential: admin.credential.cert(sa),
+      });
+      return;
+    } catch (e) {
+      console.warn("FIREBASE_SERVICE_ACCOUNT_KEY parse failed, falling back to ADC:", e);
+    }
+  }
+
   admin.initializeApp({
-    projectId: process.env.FIREBASE_PROJECT_ID,
+    projectId: process.env.FIREBASE_PROJECT_ID ?? process.env.GCP_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT,
     credential: admin.credential.applicationDefault(),
   });
 }

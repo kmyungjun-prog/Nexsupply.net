@@ -147,7 +147,8 @@ export default function AdminProjectPage() {
         method: "PUT",
         headers,
         body: file,
-      });
+        duplex: "half",
+      } as RequestInit & { duplex: string });
       if (!putRes.ok) {
         throw new Error(`Upload failed: ${putRes.status}`);
       }

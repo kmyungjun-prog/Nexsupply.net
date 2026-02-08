@@ -38,7 +38,8 @@ export async function post<T>(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-  });
+    duplex: "half",
+  } as RequestInit & { duplex: string });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { message?: string })?.message ?? res.statusText);
   return data as T;

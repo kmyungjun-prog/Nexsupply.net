@@ -9,6 +9,7 @@ export type AppErrorCode =
   | "INVALID_TRANSITION"
   | "IMMUTABLE_CLAIM"
   | "CONFLICT"
+  | "CONFIG"
   | "INTERNAL";
 
 export class AppError extends Error {

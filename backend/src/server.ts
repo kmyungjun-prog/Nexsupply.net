@@ -19,11 +19,11 @@ const dotenvPath = dotenvCandidates.find((p) => fs.existsSync(p));
 dotenv.config(dotenvPath ? { path: dotenvPath } : undefined);
 
 const port = Number(process.env.PORT ?? 8080);
-const host = process.env.HOST ?? "0.0.0.0";
 
 async function main() {
   const app = await buildApp();
-  await app.listen({ port, host });
+  // Cloud Run 등 컨테이너 환경에서는 반드시 0.0.0.0으로 리스닝해야 외부 접속 가능
+  await app.listen({ port, host: "0.0.0.0" });
 }
 
 main().catch((err) => {

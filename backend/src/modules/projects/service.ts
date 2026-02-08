@@ -3,6 +3,8 @@ import { ProjectStatus, type ActorRole } from "@prisma/client";
 import { db } from "../../libs/db.js";
 import { getSignedUrl } from "../../libs/storage.js";
 import { AppError } from "../../libs/errors.js";
+import { analyzeProductPhoto } from "../pipeline/geminiVision.js";
+import { fetchFactoryCandidates, createFactoryCandidateClaims } from "../pipeline/blueprint/rapidapi1688.js";
 
 export type Actor = { uid: string; role: ActorRole };
 
@@ -87,16 +89,66 @@ export async function completePhotoUpload(
     },
   });
 
+  const bucketName = process.env.GCS_BUCKET_NAME;
+  if (!bucketName) {
+    throw new AppError({ statusCode: 500, code: "CONFIG", message: "GCS_BUCKET_NAME is not set" });
+  }
+  const analysis = await analyzeProductPhoto(body.gcs_path, bucketName, body.mime_type);
+
   const resolvedViewJsonb = {
-    product_category: "General merchandise",
-    estimated_margin: { min: 12, max: 18, unit: "percent" },
-    _source: "photo_upload",
+    product_name: analysis.product_name,
+    product_name_zh: analysis.product_name_zh,
+    category: analysis.category,
+    material: analysis.material,
+    estimated_specs: analysis.estimated_specs,
+    search_keywords_1688: analysis.search_keywords_1688,
+    _source: "gemini_vision",
+    _analyzed_at: new Date().toISOString(),
   };
   await db.project.update({
     where: { id: projectId },
     data: { resolvedViewJsonb: resolvedViewJsonb as object, resolvedViewUpdatedAt: new Date() },
   });
-  return { project_id: projectId };
+
+  // 무료 미니 파이프라인: 1688 검색만 실행 (최대 3개 후보를 resolvedViewJsonb에 저장)
+  try {
+    const searchQuery =
+      analysis.search_keywords_1688?.[0] ?? analysis.product_name_zh ?? analysis.product_name ?? "";
+    const candidates = await fetchFactoryCandidates(searchQuery);
+    if (candidates.length > 0) {
+      const versionId = randomUUID();
+      await db.project.update({
+        where: { id: projectId },
+        data: { activeVersionId: versionId },
+      });
+      await createFactoryCandidateClaims(
+        projectId,
+        versionId,
+        `auto:${projectId}`,
+        candidates,
+        `photo-complete:${projectId}`
+      );
+      const factoryCandidatesPreview = candidates.slice(0, 3).map((c) => ({
+        name: c.factory_name,
+        location: c.location ?? "—",
+        moq: c.moq,
+        price_range: c.price_range,
+        url: c.source_url,
+      }));
+      const updatedView = {
+        ...resolvedViewJsonb,
+        factory_candidates: factoryCandidatesPreview,
+      };
+      await db.project.update({
+        where: { id: projectId },
+        data: { resolvedViewJsonb: updatedView as object, resolvedViewUpdatedAt: new Date() },
+      });
+    }
+  } catch (err) {
+    console.error("Mini pipeline (1688 search) failed:", err);
+  }
+
+  return { project_id: projectId, analysis };
 }
 
 export async function listProjectsForActor(actor: Actor) {

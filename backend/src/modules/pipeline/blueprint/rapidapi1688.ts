@@ -17,65 +17,95 @@ const ACTOR_SYSTEM = { uid: "system", role: ActorRole.system };
 
 /**
  * Get product name or category from existing H claims / resolved view.
+ * 우선순위: Gemini search_keywords_1688[0] > product_name_zh > product_name > legacy fields.
  */
 export async function getProductOrCategoryFromProject(projectId: string): Promise<string> {
   const project = await db.project.findUnique({
     where: { id: projectId },
     select: { resolvedViewJsonb: true },
   });
-  if (!project?.resolvedViewJsonb || typeof project.resolvedViewJsonb !== "object") {
-    return "";
+  const view = project?.resolvedViewJsonb as Record<string, unknown> | null | undefined;
+  if (!view || typeof view !== "object") return "";
+
+  if (Array.isArray(view.search_keywords_1688) && view.search_keywords_1688.length > 0) {
+    return String(view.search_keywords_1688[0]);
   }
-  const view = project.resolvedViewJsonb as { fields?: Record<string, { value?: unknown }> };
-  const fields = view.fields ?? {};
+  if (view.product_name_zh && typeof view.product_name_zh === "string") return view.product_name_zh;
+  if (view.product_name && typeof view.product_name === "string") return view.product_name;
+  if (view.category && typeof view.category === "string") return view.category;
+
+  const fields = (view.fields ?? {}) as Record<string, { value?: unknown }>;
   const product = (fields.product_name ?? fields.product_name_hypothesis ?? fields.category ?? { value: "" }) as { value?: string };
   return typeof product?.value === "string" ? product.value : "";
 }
 
+function getStubCandidates(query: string): FactoryCandidate[] {
+  const q = query.trim() || "product";
+  return [
+    { factory_name: `Stub ${q} 1`, platform: "1688", source_url: "https://example.com/1", moq: "100", location: "Guangdong" },
+    { factory_name: `Stub ${q} 2`, platform: "1688", source_url: "https://example.com/2", moq: "200", location: "Zhejiang" },
+    { factory_name: `Stub ${q} 3`, platform: "1688", source_url: "https://example.com/3", moq: "300", location: "Jiangsu" },
+  ];
+}
+
+function parseItemToCandidate(item: Record<string, unknown>): FactoryCandidate {
+  const price = item.price ?? item.minPrice;
+  const priceNum = typeof price === "number" ? price : typeof price === "string" ? parseFloat(price) : 0;
+  const priceRange = item.priceRange as [number, number] | undefined;
+  const min = priceRange?.[0] ?? priceNum;
+  const max = priceRange?.[1] ?? priceNum;
+  const link = (item.detailUrl ?? item.offerUrl ?? item.url) as string | undefined;
+  const url =
+    link && link !== "undefined"
+      ? link
+      : item.offerId
+        ? `https://detail.1688.com/offer/${item.offerId}.html`
+        : "https://www.1688.com";
+  return {
+    factory_name: String(item.companyName ?? item.shopName ?? item.sellerName ?? item.title ?? "Unknown"),
+    platform: "1688",
+    source_url: url,
+    price_range: { min: Number(min) || undefined, max: Number(max) || undefined, currency: "CNY" },
+    moq: item.quantityBegin ?? item.moq ?? item.minOrder ?? undefined,
+    location: String(item.province ?? item.city ?? item.location ?? "China"),
+  };
+}
+
 /**
  * Call RapidAPI 1688 (or stub). Uses RAPIDAPI_KEY and RAPIDAPI_HOST from process.env.
- * Returns at least 3 candidates when available.
+ * API 실패 시 stub fallback으로 서비스 중단 방지.
  */
 export async function fetchFactoryCandidates(productNameOrCategory: string): Promise<FactoryCandidate[]> {
   const key = process.env.RAPIDAPI_KEY;
   const host = process.env.RAPIDAPI_HOST;
-  if (!key || !host) {
-    // Stub: return minimal candidates for dev. TODO: wire real RapidAPI 1688 endpoint.
-    if (!productNameOrCategory.trim()) {
-      return [
-        { factory_name: "Stub Factory A", platform: "1688", source_url: "https://example.com/a", moq: "100", location: "Guangdong" },
-        { factory_name: "Stub Factory B", platform: "1688", source_url: "https://example.com/b", moq: "500", location: "Zhejiang" },
-        { factory_name: "Stub Factory C", platform: "1688", source_url: "https://example.com/c", moq: "200", location: "Jiangsu" },
-      ];
-    }
-    return [
-      { factory_name: `Stub ${productNameOrCategory} 1`, platform: "1688", source_url: "https://example.com/1", moq: "100", location: "Guangdong" },
-      { factory_name: `Stub ${productNameOrCategory} 2`, platform: "1688", source_url: "https://example.com/2", moq: "200", location: "Zhejiang" },
-      { factory_name: `Stub ${productNameOrCategory} 3`, platform: "1688", source_url: "https://example.com/3", moq: "300", location: "Jiangsu" },
-    ];
-  }
+  if (!key || !host) return getStubCandidates(productNameOrCategory);
 
-  // TODO: call real RapidAPI 1688 (exact path depends on API; e.g. /search or /suppliers)
-  const url = `https://${host}/search?query=${encodeURIComponent(productNameOrCategory)}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-RapidAPI-Key": key,
-      "X-RapidAPI-Host": host,
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`RapidAPI error: ${res.status}`);
+  const query = productNameOrCategory.trim();
+  if (!query) return getStubCandidates("");
+
+  // 1688-datahub 등: 호스트별로 경로/파라미터가 다를 수 있음 (keyword 또는 query)
+  const encoded = encodeURIComponent(query);
+  const url = `https://${host}/search?keyword=${encoded}&page=1`;
+  try {
+    const res = await fetch(url, {
+      headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": host },
+    });
+    if (!res.ok) throw new Error(`1688 API: ${res.status}`);
+    const data = (await res.json()) as Record<string, unknown>;
+    const rawList =
+      (data.result as { result?: unknown[] })?.result ??
+      (data.data as unknown[]) ??
+      (data.items as unknown[]) ??
+      (data.results as unknown[]) ??
+      [];
+    const items = Array.isArray(rawList) ? rawList : [];
+    const candidates = items.slice(0, 10).map((it) => parseItemToCandidate((it as Record<string, unknown>) ?? {}));
+    if (candidates.length >= 3) return candidates;
+    return [...candidates, ...getStubCandidates(query).slice(0, Math.max(0, 3 - candidates.length))];
+  } catch (err) {
+    console.warn("1688 API failed, using stub:", err);
+    return getStubCandidates(productNameOrCategory);
   }
-  const data = (await res.json()) as { results?: FactoryCandidate[]; data?: FactoryCandidate[] };
-  const list = data.results ?? data.data ?? [];
-  const candidates = Array.isArray(list) ? list.slice(0, 10) : [];
-  if (candidates.length >= 3) return candidates;
-  const stub: FactoryCandidate[] = [
-    { factory_name: "Stub A", platform: "1688", source_url: "https://example.com/a", moq: "100", location: "Guangdong" },
-    { factory_name: "Stub B", platform: "1688", source_url: "https://example.com/b", moq: "200", location: "Zhejiang" },
-    { factory_name: "Stub C", platform: "1688", source_url: "https://example.com/c", moq: "300", location: "Jiangsu" },
-  ];
-  return [...candidates, ...stub.slice(0, Math.max(0, 3 - candidates.length))];
 }
 
 /**

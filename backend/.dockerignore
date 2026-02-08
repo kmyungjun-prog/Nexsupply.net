@@ -1,0 +1,19 @@
+# 의존성 (이미지 내에서 npm ci로 설치)
+node_modules
+
+# 환경 변수 (배포 시 Cloud Run에서 주입)
+.env
+.env.*
+!.env.example
+
+# 빌드 산출물 (이미지 내에서 tsc로 생성)
+dist
+
+# Git
+.git
+.gitignore
+
+# 기타
+*.md
+*.log
+.env.local

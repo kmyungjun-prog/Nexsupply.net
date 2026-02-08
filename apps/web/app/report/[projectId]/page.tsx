@@ -6,13 +6,30 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { get, post } from "@/lib/api";
 
+type FactoryCandidatePreview = {
+  name: string;
+  location: string;
+  moq?: string;
+  price_range?: { min?: number; max?: number; currency?: string };
+  url: string;
+};
+
 type ProjectReport = {
   id: string;
   status: string;
   ownerUserId: string;
   resolvedViewJsonb: {
+    product_name?: string;
+    product_name_zh?: string;
+    category?: string;
+    material?: string;
+    estimated_specs?: string;
+    search_keywords_1688?: string[];
+    factory_candidates?: FactoryCandidatePreview[];
     product_category?: string;
     estimated_margin?: { min?: number; max?: number; unit?: string };
+    _source?: string;
+    _analyzed_at?: string;
   } | null;
   resolvedViewUpdatedAt: string | null;
   createdAt: string;
@@ -71,6 +88,22 @@ export default function ReportPage() {
     }
   }, [projectId]);
 
+  // 분석 중일 때 5초마다 폴링
+  useEffect(() => {
+    if (!projectId || !project) return;
+    const view = project.resolvedViewJsonb;
+    const hasGemini = view?._source === "gemini_vision" && (view?.product_name ?? view?.product_name_zh);
+    const hasReport =
+      hasGemini ||
+      view?.product_category != null ||
+      view?.category != null ||
+      (view?.estimated_margin != null && (view.estimated_margin.min != null || view.estimated_margin.max != null));
+    const pending = project.status === "ANALYZING" && !hasReport;
+    if (!pending) return;
+    const t = setInterval(loadProject, 5000);
+    return () => clearInterval(t);
+  }, [projectId, project?.status, project?.resolvedViewJsonb]);
+
   const handleEvidenceUpload = async (file?: File | null) => {
     const f = file ?? fileInputRef.current?.files?.[0];
     if (!projectId || !f || uploadStatus) return;
@@ -95,7 +128,12 @@ export default function ReportPage() {
       );
       setUploadStatus("Uploading…");
       const headers: Record<string, string> = { "Content-Type": mime, ...(initiate.upload_headers ?? {}) };
-      const putRes = await fetch(initiate.upload_url, { method: "PUT", headers, body: f });
+      const putRes = await fetch(initiate.upload_url, {
+        method: "PUT",
+        headers,
+        body: f,
+        duplex: "half",
+      } as RequestInit & { duplex: string });
       if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
       setUploadStatus("Registering…");
       const idempotencyKey = `evidence-complete:${projectId}:${initiate.gcs_path}`;
@@ -125,48 +163,182 @@ export default function ReportPage() {
   };
 
   if (!projectId) return null;
-  if (loading && !project) return <section><p>Loading…</p><Link href="/">Back</Link></section>;
+  if (loading && !project) {
+    return (
+      <section style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
+        <div style={{ height: 24, width: "40%", background: "#e5e7eb", borderRadius: 4, marginBottom: 12 }} />
+        <div style={{ height: 16, width: "70%", background: "#f3f4f6", borderRadius: 4, marginBottom: 8 }} />
+        <div style={{ height: 16, width: "55%", background: "#f3f4f6", borderRadius: 4, marginBottom: 24 }} />
+        <div style={{ height: 120, background: "#f9fafb", borderRadius: 12, marginBottom: 12 }} />
+        <div style={{ height: 80, background: "#f9fafb", borderRadius: 12 }} />
+        <p style={{ marginTop: "1rem" }}><Link href="/">Back</Link></p>
+      </section>
+    );
+  }
   if (error && !project) return <section><p style={{ color: "red" }}>{error}</p><Link href="/">Back</Link></section>;
   if (!project) return null;
 
-  const category = project.resolvedViewJsonb?.product_category ?? null;
-  const margin = project.resolvedViewJsonb?.estimated_margin ?? null;
-  const hasReport = category != null || (margin != null && (margin.min != null || margin.max != null));
+  const view = project.resolvedViewJsonb;
+  const category = view?.product_category ?? view?.category ?? null;
+  const margin = view?.estimated_margin ?? null;
+  const hasGemini = view?._source === "gemini_vision" && (view?.product_name ?? view?.product_name_zh);
+  const hasReport =
+    hasGemini ||
+    category != null ||
+    (margin != null && (margin.min != null || margin.max != null));
   const pending = project.status === "ANALYZING" && !hasReport;
+  const factoryCandidates = view?.factory_candidates ?? [];
 
   return (
-    <section>
+    <section style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
       <h2>H-Report</h2>
       <p><strong>Project ID:</strong> {project.id}</p>
       <p><strong>Status:</strong> {project.status}</p>
       {pending ? (
-        <p>Analysis in progress. Click Refresh to check again.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "1rem" }}>
+          <span
+            style={{
+              width: 24,
+              height: 24,
+              border: "2px solid #e5e7eb",
+              borderTopColor: "#2563eb",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+          <p style={{ margin: 0 }}>Analyzing… We’ll refresh automatically every 5 seconds.</p>
+        </div>
       ) : (
         <>
-          <p><strong>Product category:</strong> {category ?? "—"}</p>
-          <p>
-            <strong>Estimated margin:</strong>{" "}
-            {margin?.min != null && margin?.max != null
-              ? `${margin.min}–${margin.max}%`
-              : margin?.min != null
-                ? `${margin.min}%`
-                : margin?.max != null
-                  ? `up to ${margin.max}%`
-                  : "—"}
+          {/* 제품 분석 결과 카드 */}
+          {(view?.product_name ?? view?.product_name_zh) && (
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: "1rem 1.25rem",
+                marginTop: "1rem",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.1rem" }}>제품 분석 결과</h3>
+              <p style={{ margin: "0.25rem 0" }}>
+                <strong>제품명 (EN):</strong> {view.product_name ?? "—"}
+              </p>
+              {view.product_name_zh && (
+                <p style={{ margin: "0.25rem 0" }}>
+                  <strong>제품명 (중국어):</strong> {view.product_name_zh}
+                </p>
+              )}
+              {(view.category ?? view.product_category) && (
+                <p style={{ margin: "0.25rem 0" }}>
+                  <strong>카테고리:</strong> {view.category ?? view.product_category}
+                </p>
+              )}
+              {view.material && (
+                <p style={{ margin: "0.25rem 0" }}>
+                  <strong>소재:</strong> {view.material}
+                </p>
+              )}
+              {view.estimated_specs && (
+                <p style={{ margin: "0.25rem 0" }}>
+                  <strong>추정 스펙:</strong> {view.estimated_specs}
+                </p>
+              )}
+              {view._analyzed_at && (
+                <p style={{ margin: "0.5rem 0 0", fontSize: "0.875rem", color: "#6b7280" }}>
+                  AI 분석: {new Date(view._analyzed_at).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 레거시: category / margin만 있는 경우 */}
+          {!hasGemini && (category != null || (margin?.min != null || margin?.max != null)) && (
+            <>
+              <p><strong>Product category:</strong> {category ?? "—"}</p>
+              <p>
+                <strong>Estimated margin:</strong>{" "}
+                {margin?.min != null && margin?.max != null
+                  ? `${margin.min}–${margin.max}%`
+                  : margin?.min != null
+                    ? `${margin.min}%`
+                    : margin?.max != null
+                      ? `up to ${margin.max}%`
+                      : "—"}
+              </p>
+            </>
+          )}
+
+          {/* 공장 후보 카드 (최대 3개 무료) */}
+          {factoryCandidates.length > 0 && (
+            <div
+              style={{
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: "1rem 1.25rem",
+                marginTop: "1rem",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              }}
+            >
+              <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.1rem" }}>공장 후보 (무료 미리보기)</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {factoryCandidates.map((c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      border: "1px solid #f3f4f6",
+                      borderRadius: 8,
+                      padding: "0.75rem 1rem",
+                      background: "#fafafa",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 0.25rem", fontWeight: 600 }}>{c.name}</p>
+                    <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
+                      위치: {c.location} · MOQ: {c.moq ?? "—"}
+                    </p>
+                    {c.price_range && (c.price_range.min != null || c.price_range.max != null) && (
+                      <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
+                        가격: {c.price_range.min ?? "?"}–{c.price_range.max ?? "?"}{" "}
+                        {c.price_range.currency ?? "CNY"}
+                      </p>
+                    )}
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: "0.875rem", color: "#2563eb" }}
+                    >
+                      1688에서 보기 →
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 업그레이드 CTA */}
+          <div
+            style={{
+              background: "#fef3c7",
+              padding: "1rem",
+              borderRadius: 8,
+              marginTop: "1rem",
+              border: "1px solid #fcd34d",
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              위 결과는 AI 추정 가설이며, 실제 공장 가격이 아닙니다.
+            </p>
+          </div>
+          <p style={{ marginTop: "1rem" }}>
+            <Link href={`/blueprint-request/${projectId}`}>
+              <button type="button">
+                더 많은 공장 후보 + AI 비교 분석 받기 → Blueprint ($49)
+              </button>
+            </Link>
           </p>
         </>
-      )}
-      <div style={{ background: "#fef3c7", padding: "1rem", borderRadius: 8, marginTop: "1rem" }}>
-        <p style={{ margin: 0 }}>
-          This is an AI-estimated hypothesis, not live factory pricing.
-        </p>
-      </div>
-      {!pending && (
-        <p style={{ marginTop: "1rem" }}>
-          <Link href={`/blueprint-request/${projectId}`}>
-            <button type="button">Request Blueprint ($49)</button>
-          </Link>
-        </p>
       )}
       <p style={{ marginTop: "0.5rem" }}>
         <button type="button" onClick={load} disabled={loading}>Refresh</button>

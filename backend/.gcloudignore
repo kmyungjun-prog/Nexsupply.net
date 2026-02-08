@@ -1,0 +1,7 @@
+# gcloud 빌드 시 업로드 제외 (로컬 설정/빌드 산출물 제외)
+.git
+.gitignore
+node_modules
+dist
+.env
+.env.*
