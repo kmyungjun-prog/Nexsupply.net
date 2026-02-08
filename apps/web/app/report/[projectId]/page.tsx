@@ -88,7 +88,6 @@ export default function ReportPage() {
     }
   }, [projectId]);
 
-  // 분석 중일 때 5초마다 폴링
   useEffect(() => {
     if (!projectId || !project) return;
     const view = project.resolvedViewJsonb;
@@ -110,14 +109,14 @@ export default function ReportPage() {
     const mime = f.type || "application/octet-stream";
     const allowed = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowed.includes(mime)) {
-      setError("Allowed: PDF, JPEG, PNG, GIF, WebP.");
+      setError("PDF, JPEG, PNG, GIF, WebP만 지원합니다.");
       return;
     }
     if (f.size > 25 * 1024 * 1024) {
-      setError("File too large (max 25 MB).");
+      setError("파일 크기는 25MB 이하여야 합니다.");
       return;
     }
-    setUploadStatus("Preparing…");
+    setUploadStatus("준비 중…");
     setError(null);
     try {
       const token = await getIdToken();
@@ -126,7 +125,7 @@ export default function ReportPage() {
         { original_filename: f.name, mime_type: mime, size_bytes: f.size },
         token
       );
-      setUploadStatus("Uploading…");
+      setUploadStatus("업로드 중…");
       const headers: Record<string, string> = { "Content-Type": mime, ...(initiate.upload_headers ?? {}) };
       const putRes = await fetch(initiate.upload_url, {
         method: "PUT",
@@ -134,8 +133,8 @@ export default function ReportPage() {
         body: f,
         duplex: "half",
       } as RequestInit & { duplex: string });
-      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
-      setUploadStatus("Registering…");
+      if (!putRes.ok) throw new Error(`업로드 실패: ${putRes.status}`);
+      setUploadStatus("등록 중…");
       const idempotencyKey = `evidence-complete:${projectId}:${initiate.gcs_path}`;
       await post(
         `/projects/${projectId}/evidence/complete`,
@@ -163,19 +162,31 @@ export default function ReportPage() {
   };
 
   if (!projectId) return null;
+
   if (loading && !project) {
     return (
-      <section style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
-        <div style={{ height: 24, width: "40%", background: "#e5e7eb", borderRadius: 4, marginBottom: 12 }} />
-        <div style={{ height: 16, width: "70%", background: "#f3f4f6", borderRadius: 4, marginBottom: 8 }} />
-        <div style={{ height: 16, width: "55%", background: "#f3f4f6", borderRadius: 4, marginBottom: 24 }} />
-        <div style={{ height: 120, background: "#f9fafb", borderRadius: 12, marginBottom: 12 }} />
-        <div style={{ height: 80, background: "#f9fafb", borderRadius: 12 }} />
-        <p style={{ marginTop: "1rem" }}><Link href="/">Back</Link></p>
-      </section>
+      <div className="container-wide">
+        <div className="skeleton mb-4" style={{ height: 28, width: "40%" }} />
+        <div className="skeleton mb-2" style={{ height: 18, width: "70%" }} />
+        <div className="skeleton mb-6" style={{ height: 18, width: "55%" }} />
+        <div className="skeleton mb-4" style={{ height: 140, borderRadius: "var(--radius-lg)" }} />
+        <div className="skeleton" style={{ height: 100, borderRadius: "var(--radius-lg)" }} />
+        <p className="mt-4"><Link href="/" className="btn btn-ghost">홈으로</Link></p>
+      </div>
     );
   }
-  if (error && !project) return <section><p style={{ color: "red" }}>{error}</p><Link href="/">Back</Link></section>;
+
+  if (error && !project) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="alert alert-error">{error}</div>
+          <Link href="/" className="btn btn-secondary mt-4">홈으로</Link>
+        </div>
+      </div>
+    );
+  }
+
   if (!project) return null;
 
   const view = project.resolvedViewJsonb;
@@ -190,75 +201,43 @@ export default function ReportPage() {
   const factoryCandidates = view?.factory_candidates ?? [];
 
   return (
-    <section style={{ maxWidth: 720, margin: "0 auto", padding: "1rem" }}>
-      <h2>H-Report</h2>
-      <p><strong>Project ID:</strong> {project.id}</p>
-      <p><strong>Status:</strong> {project.status}</p>
+    <div className="container-wide">
+      <div className="flex items-center gap-4 mb-6">
+        <h1 className="mb-0">분석 리포트</h1>
+        <span className={`badge ${pending ? "badge-warning" : "badge-neutral"}`}>{project.status}</span>
+      </div>
+      <p className="text-muted mb-6">프로젝트 ID: {project.id}</p>
+
       {pending ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "1rem" }}>
-          <span
-            style={{
-              width: 24,
-              height: 24,
-              border: "2px solid #e5e7eb",
-              borderTopColor: "#2563eb",
-              borderRadius: "50%",
-              animation: "spin 0.8s linear infinite",
-            }}
-          />
-          <p style={{ margin: 0 }}>Analyzing… We’ll refresh automatically every 5 seconds.</p>
+        <div className="card">
+          <div className="flex items-center gap-3">
+            <span className="spinner" />
+            <p className="mb-0 text-muted">분석 중입니다. 5초마다 자동으로 새로고침됩니다.</p>
+          </div>
         </div>
       ) : (
         <>
-          {/* 제품 분석 결과 카드 */}
           {(view?.product_name ?? view?.product_name_zh) && (
-            <div
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 12,
-                padding: "1rem 1.25rem",
-                marginTop: "1rem",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-            >
-              <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.1rem" }}>제품 분석 결과</h3>
-              <p style={{ margin: "0.25rem 0" }}>
-                <strong>제품명 (EN):</strong> {view.product_name ?? "—"}
-              </p>
-              {view.product_name_zh && (
-                <p style={{ margin: "0.25rem 0" }}>
-                  <strong>제품명 (중국어):</strong> {view.product_name_zh}
-                </p>
-              )}
+            <div className="card mb-4">
+              <h3 className="card-title">제품 분석 결과</h3>
+              <p className="mb-2"><strong>제품명 (EN)</strong> {view.product_name ?? "—"}</p>
+              {view.product_name_zh && <p className="mb-2"><strong>제품명 (중국어)</strong> {view.product_name_zh}</p>}
               {(view.category ?? view.product_category) && (
-                <p style={{ margin: "0.25rem 0" }}>
-                  <strong>카테고리:</strong> {view.category ?? view.product_category}
-                </p>
+                <p className="mb-2"><strong>카테고리</strong> {view.category ?? view.product_category}</p>
               )}
-              {view.material && (
-                <p style={{ margin: "0.25rem 0" }}>
-                  <strong>소재:</strong> {view.material}
-                </p>
-              )}
-              {view.estimated_specs && (
-                <p style={{ margin: "0.25rem 0" }}>
-                  <strong>추정 스펙:</strong> {view.estimated_specs}
-                </p>
-              )}
+              {view.material && <p className="mb-2"><strong>소재</strong> {view.material}</p>}
+              {view.estimated_specs && <p className="mb-2"><strong>추정 스펙</strong> {view.estimated_specs}</p>}
               {view._analyzed_at && (
-                <p style={{ margin: "0.5rem 0 0", fontSize: "0.875rem", color: "#6b7280" }}>
-                  AI 분석: {new Date(view._analyzed_at).toLocaleString()}
-                </p>
+                <p className="text-subtle mb-0">AI 분석 시각: {new Date(view._analyzed_at).toLocaleString()}</p>
               )}
             </div>
           )}
 
-          {/* 레거시: category / margin만 있는 경우 */}
           {!hasGemini && (category != null || (margin?.min != null || margin?.max != null)) && (
-            <>
-              <p><strong>Product category:</strong> {category ?? "—"}</p>
-              <p>
-                <strong>Estimated margin:</strong>{" "}
+            <div className="card mb-4">
+              <p><strong>Product category</strong> {category ?? "—"}</p>
+              <p className="mb-0">
+                <strong>Estimated margin</strong>{" "}
                 {margin?.min != null && margin?.max != null
                   ? `${margin.min}–${margin.max}%`
                   : margin?.min != null
@@ -267,48 +246,33 @@ export default function ReportPage() {
                       ? `up to ${margin.max}%`
                       : "—"}
               </p>
-            </>
+            </div>
           )}
 
-          {/* 공장 후보 카드 (최대 3개 무료) */}
           {factoryCandidates.length > 0 && (
-            <div
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 12,
-                padding: "1rem 1.25rem",
-                marginTop: "1rem",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-              }}
-            >
-              <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.1rem" }}>공장 후보 (무료 미리보기)</h3>
+            <div className="card mb-4">
+              <h3 className="card-title">공장 후보 (무료 미리보기)</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {factoryCandidates.map((c, i) => (
                   <div
                     key={i}
                     style={{
-                      border: "1px solid #f3f4f6",
-                      borderRadius: 8,
                       padding: "0.75rem 1rem",
-                      background: "#fafafa",
+                      background: "var(--color-border-muted)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--color-border)",
                     }}
                   >
-                    <p style={{ margin: "0 0 0.25rem", fontWeight: 600 }}>{c.name}</p>
-                    <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
-                      위치: {c.location} · MOQ: {c.moq ?? "—"}
+                    <p className="mb-2" style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{c.name}</p>
+                    <p className="text-muted mb-2" style={{ marginBottom: "0.25rem", fontSize: "0.9375rem" }}>
+                      위치 {c.location} · MOQ {c.moq ?? "—"}
                     </p>
                     {c.price_range && (c.price_range.min != null || c.price_range.max != null) && (
-                      <p style={{ margin: "0.25rem 0", fontSize: "0.9rem" }}>
-                        가격: {c.price_range.min ?? "?"}–{c.price_range.max ?? "?"}{" "}
-                        {c.price_range.currency ?? "CNY"}
+                      <p className="text-muted mb-2" style={{ fontSize: "0.9375rem" }}>
+                        가격 {c.price_range.min ?? "?"}–{c.price_range.max ?? "?"} {c.price_range.currency ?? "CNY"}
                       </p>
                     )}
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: "0.875rem", color: "#2563eb" }}
-                    >
+                    <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem" }}>
                       1688에서 보기 →
                     </a>
                   </div>
@@ -317,71 +281,63 @@ export default function ReportPage() {
             </div>
           )}
 
-          {/* 업그레이드 CTA */}
-          <div
-            style={{
-              background: "#fef3c7",
-              padding: "1rem",
-              borderRadius: 8,
-              marginTop: "1rem",
-              border: "1px solid #fcd34d",
-            }}
-          >
-            <p style={{ margin: 0 }}>
-              위 결과는 AI 추정 가설이며, 실제 공장 가격이 아닙니다.
-            </p>
+          <div className="alert alert-warning mb-4">
+            위 결과는 AI 추정 가설이며, 실제 공장 가격이 아닙니다.
           </div>
-          <p style={{ marginTop: "1rem" }}>
-            <Link href={`/blueprint-request/${projectId}`}>
-              <button type="button">
-                더 많은 공장 후보 + AI 비교 분석 받기 → Blueprint ($49)
-              </button>
+
+          <div className="flex gap-2 mb-6">
+            <Link href={`/blueprint-request/${projectId}`} className="btn btn-accent">
+              더 많은 공장 + AI 비교 분석 → Blueprint ($49)
             </Link>
-          </p>
+            <button type="button" className="btn btn-secondary" onClick={load} disabled={loading}>
+              새로고침
+            </button>
+          </div>
         </>
       )}
-      <p style={{ marginTop: "0.5rem" }}>
-        <button type="button" onClick={load} disabled={loading}>Refresh</button>
-      </p>
 
-      <section style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid #eee" }}>
-        <h3>Evidence documents</h3>
-        <p>Upload PDF or images. No edit or delete.</p>
+      <div className="card mt-6" style={{ borderTop: "1px solid var(--color-border)", paddingTop: "1.5rem" }}>
+        <h3 className="card-title">증빙 자료</h3>
+        <p className="text-muted mb-4">PDF 또는 이미지 업로드 (수정·삭제 불가)</p>
         <input
           ref={fileInputRef}
           type="file"
           accept={ACCEPT_EVIDENCE}
           onChange={onEvidenceFileChange}
           disabled={!!uploadStatus}
-          aria-label="Upload evidence (PDF or image)"
+          className="input mb-2"
+          style={{ maxWidth: 320 }}
+          aria-label="증빙 자료 업로드"
         />
-        {uploadStatus && <p style={{ margin: "4px 0", color: "#6b7280" }}>{uploadStatus}</p>}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid #ddd" }}>
-              <th style={{ textAlign: "left", padding: 6 }}>Filename</th>
-              <th style={{ textAlign: "left", padding: 6 }}>MIME type</th>
-              <th style={{ textAlign: "left", padding: 6 }}>Created</th>
-              <th style={{ textAlign: "left", padding: 6 }}>Virus scan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {evidenceList.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: 8, color: "#6b7280" }}>No evidence yet.</td></tr>
-            )}
-            {evidenceList.map((ev) => (
-              <tr key={ev.evidence_id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: 6 }}>{ev.original_filename ?? "—"}</td>
-                <td style={{ padding: 6 }}>{ev.mime_type}</td>
-                <td style={{ padding: 6 }}>{new Date(ev.created_at).toLocaleString()}</td>
-                <td style={{ padding: 6 }}>{ev.virus_scan_status ?? "—"}</td>
+        {uploadStatus && <p className="text-muted mb-2">{uploadStatus}</p>}
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>파일명</th>
+                <th>유형</th>
+                <th>업로드 시각</th>
+                <th>바이러스 검사</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {evidenceList.length === 0 && (
+                <tr><td colSpan={4} className="text-muted">아직 증빙 자료가 없습니다.</td></tr>
+              )}
+              {evidenceList.map((ev) => (
+                <tr key={ev.evidence_id}>
+                  <td>{ev.original_filename ?? "—"}</td>
+                  <td>{ev.mime_type}</td>
+                  <td>{new Date(ev.created_at).toLocaleString()}</td>
+                  <td>{ev.virus_scan_status ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <p><Link href="/">Back</Link></p>
-    </section>
+      <p className="mt-4"><Link href="/" className="btn btn-ghost">홈으로</Link></p>
+    </div>
   );
 }

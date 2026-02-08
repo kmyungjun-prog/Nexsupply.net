@@ -14,7 +14,7 @@ type InitiateRes = {
   upload_expires_at: string;
 };
 
-const STEPS = ["Preparing", "Uploading", "Analyzing", "Done"] as const;
+const STEPS = ["준비 중", "업로드 중", "분석 중", "완료"] as const;
 
 export default function UploadPage() {
   const { user, getIdToken } = useAuth();
@@ -29,11 +29,11 @@ export default function UploadPage() {
     if (!user || loading) return;
     const mime = file.type || "image/jpeg";
     if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mime)) {
-      setError("Allowed formats: JPEG, PNG, GIF, WebP.");
+      setError("JPEG, PNG, GIF, WebP만 지원합니다.");
       return;
     }
     if (file.size > 25 * 1024 * 1024) {
-      setError("File too large (max 25 MB).");
+      setError("파일 크기는 25MB 이하여야 합니다.");
       return;
     }
     setLoading(true);
@@ -58,7 +58,7 @@ export default function UploadPage() {
         body: file,
         duplex: "half",
       } as RequestInit & { duplex: string });
-      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+      if (!putRes.ok) throw new Error(`업로드 실패: ${putRes.status}`);
       setStepIndex(3);
       const idempotencyKey = `photo-complete:${initiate.project_id}:${initiate.gcs_path}`;
       await post(
@@ -84,7 +84,7 @@ export default function UploadPage() {
   const handleAnalyze = () => {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
-      setError("Select an image first.");
+      setError("이미지를 선택해 주세요.");
       return;
     }
     runWithFile(file);
@@ -106,83 +106,82 @@ export default function UploadPage() {
 
   if (!user) {
     return (
-      <section>
-        <p>Please sign in to analyze a product.</p>
-        <Link href="/">Home</Link>
-      </section>
+      <div className="container">
+        <div className="card">
+          <p className="text-muted">제품 분석을 하려면 로그인해 주세요.</p>
+          <Link href="/" className="btn btn-secondary mt-4">
+            홈으로
+          </Link>
+        </div>
+      </div>
     );
   }
 
   return (
-    <section style={{ maxWidth: 480, margin: "0 auto", padding: "1.5rem" }}>
-      <h2>Analyze product</h2>
-      <p>Upload a product photo. We will create a project and run AI analysis.</p>
+    <div className="container">
+      <h1 className="mb-2">제품 사진 분석</h1>
+      <p className="text-muted mb-6">사진을 올리면 AI가 제품을 분석하고 1688 공장 후보를 추천합니다.</p>
 
-      <div
-        role="button"
-        tabIndex={0}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
-        style={{
-          border: `2px dashed ${dragOver ? "#2563eb" : "#d1d5db"}`,
-          borderRadius: 12,
-          padding: "2rem",
-          textAlign: "center",
-          background: dragOver ? "#eff6ff" : "#f9fafb",
-          cursor: loading ? "not-allowed" : "pointer",
-          marginBottom: "1rem",
-        }}
-        aria-label="Drop image or click to select"
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          aria-label="Select product image"
-          disabled={!!loading}
-          style={{ display: "none" }}
-        />
-        {loading ? (
-          <>
-            <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>
-              {STEPS[stepIndex]}…
-            </p>
-            <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 8 }}>
-              {STEPS.map((_, i) => (
-                <span
-                  key={i}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: i <= stepIndex ? "#2563eb" : "#e5e7eb",
-                  }}
-                />
-              ))}
-            </div>
-          </>
-        ) : (
-          <p style={{ margin: 0, color: "#6b7280" }}>
-            Drag & drop an image here, or click to choose
-          </p>
+      <div className="card mb-4">
+        <div
+          className={`upload-zone ${dragOver ? "drag-over" : ""} ${loading ? "disabled" : ""}`}
+          role="button"
+          tabIndex={0}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+          aria-label="이미지 드래그 또는 클릭하여 선택"
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            aria-label="제품 이미지 선택"
+            disabled={!!loading}
+            style={{ display: "none" }}
+          />
+          {loading ? (
+            <>
+              <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>{STEPS[stepIndex]}…</p>
+              <div className="flex gap-2 items-center" style={{ justifyContent: "center", marginTop: 8 }}>
+                {STEPS.map((_, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: i <= stepIndex ? "var(--color-primary)" : "var(--color-border)",
+                    }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="upload-zone-text">이미지를 여기에 끌어다 놓거나 클릭하여 선택</p>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-4">
+          <button type="button" className="btn btn-primary" onClick={handleAnalyze} disabled={loading}>
+            {loading ? "처리 중…" : "분석 시작"}
+          </button>
+          <Link href="/" className="btn btn-secondary">
+            취소
+          </Link>
+        </div>
+
+        {error && (
+          <div className="alert alert-error mt-4">
+            {error}
+            <button type="button" className="btn btn-ghost mt-2" onClick={() => { setError(null); setStepIndex(0); }}>
+              다시 시도
+            </button>
+          </div>
         )}
       </div>
-
-      <button type="button" onClick={handleAnalyze} disabled={loading} style={{ marginRight: 8 }}>
-        {loading ? "Processing…" : "Analyze product"}
-      </button>
-      {error && (
-        <>
-          <p style={{ color: "#dc2626", margin: "0.5rem 0" }}>{error}</p>
-          <button type="button" onClick={() => { setError(null); setStepIndex(0); }} style={{ marginTop: 4 }}>
-            Try again
-          </button>
-        </>
-      )}
-      <p style={{ marginTop: "1rem" }}><Link href="/">Back</Link></p>
-    </section>
+    </div>
   );
 }
