@@ -5,6 +5,7 @@
  */
 
 import { Storage } from "@google-cloud/storage";
+import { AppError } from "./errors.js";
 
 export type SignedUrlAction = "read" | "write";
 
@@ -29,7 +30,11 @@ function getStorageClient(): Storage {
 export async function getSignedUrl(input: GetSignedUrlInput): Promise<string> {
   const bucketName = process.env.GCS_BUCKET_NAME;
   if (!bucketName) {
-    throw new Error("GCS_BUCKET_NAME is not set");
+    throw new AppError({
+      statusCode: 500,
+      code: "CONFIG",
+      message: "GCS_BUCKET_NAME is not set. Configure it in Cloud Run (or backend) environment.",
+    });
   }
   const client = getStorageClient();
   const bucket = client.bucket(bucketName);

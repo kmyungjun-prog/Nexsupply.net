@@ -17,8 +17,11 @@ export async function get<T>(
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { message?: string })?.message ?? res.statusText);
+  const data = (await res.json().catch(() => ({}))) as { message?: string; error?: { message?: string } };
+  if (!res.ok) {
+    const msg = data?.error?.message ?? data?.message ?? res.statusText;
+    throw new Error(msg);
+  }
   return data as T;
 }
 
@@ -40,7 +43,10 @@ export async function post<T>(
     body: JSON.stringify(body),
     duplex: "half",
   } as RequestInit & { duplex: string });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { message?: string })?.message ?? res.statusText);
+  const data = (await res.json().catch(() => ({}))) as { message?: string; error?: { message?: string } };
+  if (!res.ok) {
+    const msg = data?.error?.message ?? data?.message ?? res.statusText;
+    throw new Error(msg);
+  }
   return data as T;
 }
