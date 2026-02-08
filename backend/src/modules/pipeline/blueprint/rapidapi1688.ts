@@ -61,12 +61,15 @@ function parseItemToCandidate(item: Record<string, unknown>): FactoryCandidate {
       : item.offerId
         ? `https://detail.1688.com/offer/${item.offerId}.html`
         : "https://www.1688.com";
+  const moqRaw = item.quantityBegin ?? item.moq ?? item.minOrder;
+  const moq =
+    typeof moqRaw === "string" ? moqRaw : moqRaw != null && typeof moqRaw !== "object" ? String(moqRaw) : undefined;
   return {
     factory_name: String(item.companyName ?? item.shopName ?? item.sellerName ?? item.title ?? "Unknown"),
     platform: "1688",
     source_url: url,
     price_range: { min: Number(min) || undefined, max: Number(max) || undefined, currency: "CNY" },
-    moq: item.quantityBegin ?? item.moq ?? item.minOrder ?? undefined,
+    moq,
     location: String(item.province ?? item.city ?? item.location ?? "China"),
   };
 }
