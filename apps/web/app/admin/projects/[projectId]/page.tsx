@@ -270,217 +270,238 @@ export default function AdminProjectPage() {
     }
   };
 
-  if (loading && !data) return <AdminGuard><div style={{ padding: "1rem" }}>Loading…</div></AdminGuard>;
-  if (error && !data) return <AdminGuard><section><p style={{ color: "red" }}>{error}</p><Link href="/admin">Back</Link></section></AdminGuard>;
+  if (loading && !data) {
+    return (
+      <AdminGuard>
+        <div className="container-wide">
+          <div className="card">
+            <div className="flex items-center gap-3">
+              <span className="spinner" />
+              <span className="text-muted">Loading…</span>
+            </div>
+          </div>
+        </div>
+      </AdminGuard>
+    );
+  }
+  if (error && !data) {
+    return (
+      <AdminGuard>
+        <div className="container">
+          <div className="alert alert-error mb-4">{error}</div>
+          <Link href="/admin" className="btn btn-secondary">Back to list</Link>
+        </div>
+      </AdminGuard>
+    );
+  }
   if (!data) return null;
 
   const { project, claims } = data;
 
   return (
     <AdminGuard>
-      <div>
-        <Link href="/admin">Back to list</Link>
+      <div className="container-wide">
+        <p className="mb-6">
+          <Link href="/admin" className="btn btn-ghost">← Back to list</Link>
+        </p>
 
-        <section>
-          <h2>A. Project Header</h2>
-          <p><strong>Project ID:</strong> {project.id}</p>
-          <p><strong>Status:</strong> {project.status}</p>
-          {project.status === "VERIFIED" && <span className="badge badge-verified">VERIFIED</span>}
-        </section>
+        <div className="card mb-4">
+          <h2 className="card-title">A. Project</h2>
+          <p className="mb-2"><strong>Project ID</strong> {project.id}</p>
+          <p className="mb-0">
+            <strong>Status</strong> {project.status}
+            {project.status === "VERIFIED" && <span className="badge badge-verified" style={{ marginLeft: 8 }}>VERIFIED</span>}
+          </p>
+        </div>
 
-        <section>
-          <h2>B. Factory Candidates</h2>
-          {(claims.factory_candidate?.length ?? 0) === 0 && <p>No candidates.</p>}
+        <div className="card mb-4">
+          <h2 className="card-title">B. Factory candidates</h2>
+          {(claims.factory_candidate?.length ?? 0) === 0 && <p className="text-muted mb-0">No candidates.</p>}
           {(claims.factory_candidate ?? []).slice(0, 10).map((c) => (
-            <div key={c.id} style={{ marginBottom: "1rem", padding: "0.75rem", border: "1px solid #eee", borderRadius: 6 }}>
-              <pre style={{ margin: 0, fontSize: "0.85rem", overflow: "auto" }}>{JSON.stringify(c.valueJson, null, 2)}</pre>
+            <div key={c.id} className="card mb-4" style={{ padding: "0.75rem 1rem", background: "var(--color-border-muted)" }}>
+              <pre style={{ margin: "0 0 8px", fontSize: "0.85rem", overflow: "auto" }}>{JSON.stringify(c.valueJson, null, 2)}</pre>
               {(claims.factory_rule_flags ?? []).filter((f) => (f.valueJson as { factory_candidate_id?: string })?.factory_candidate_id === c.id).map((f) => (
-                <span key={f.id} style={{ marginRight: 6, padding: "2px 6px", background: "#fef3c7", borderRadius: 4 }}>
+                <span key={f.id} className="badge badge-warning" style={{ marginRight: 6 }}>
                   {(f.valueJson as { flags?: { flag: string }[] })?.flags?.map((x) => x.flag).join(", ")}
                 </span>
               ))}
               {(claims.factory_ai_explanation ?? []).filter((e) => (e.valueJson as { factory_candidate_id?: string })?.factory_candidate_id === c.id).map((e) => (
-                <div key={e.id} style={{ marginTop: 6, fontSize: "0.9rem", color: "#374151" }}>
+                <div key={e.id} className="text-muted" style={{ marginTop: 6, fontSize: "0.9rem" }}>
                   AI: {(e.valueJson as { explanation?: string })?.explanation ?? "-"}
                 </div>
               ))}
             </div>
           ))}
-        </section>
+        </div>
 
-        <section>
-          <h2>C. Phase-E Execution Plan</h2>
-          {planSteps.length === 0 && <p>No execution plan.</p>}
-          <ul style={{ listStyle: "none", padding: 0 }}>
+        <div className="card mb-4">
+          <h2 className="card-title">C. Phase-E Execution plan</h2>
+          {planSteps.length === 0 && <p className="text-muted mb-0">No execution plan.</p>}
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
             {planSteps.map((s) => (
-              <li key={s.step} style={{ padding: "0.5rem 0", borderBottom: "1px solid #eee" }}>
-                <strong>{s.step}</strong> — Human action required. {s.description}
+              <li key={s.step} style={{ padding: "0.5rem 0", borderBottom: "1px solid var(--color-border)" }}>
+                <strong>{s.step}</strong> — {s.description}
               </li>
             ))}
           </ul>
-        </section>
+        </div>
 
-        <section>
-          <h2>D. Phase-F Approve Execution</h2>
-          <p className="warning">{IRREVERSIBLE_WARNING}</p>
+        <div className="card mb-4">
+          <h2 className="card-title">D. Phase-F Approve execution</h2>
+          <p className="warning mb-4">{IRREVERSIBLE_WARNING}</p>
           {planSteps.map((s) => (
-            <label key={s.step} style={{ display: "block", marginBottom: 6 }}>
+            <label key={s.step} className="flex items-center gap-2 mb-2" style={{ display: "flex", cursor: "pointer" }}>
               <input type="checkbox" checked={selectedSteps.has(s.step)} onChange={() => toggleStep(s.step)} disabled={hasExecutionApproved} />
               {s.step}
-              {approvedStepsSet.has(s.step) && <span className="badge badge-sent" style={{ marginLeft: 8 }}>Approved</span>}
+              {approvedStepsSet.has(s.step) && <span className="badge badge-sent">Approved</span>}
             </label>
           ))}
-          <button type="button" onClick={handleApprove} disabled={selectedSteps.size === 0 || approving || hasExecutionApproved}>
-            {approving ? "Approving…" : "Approve selected steps"}
-          </button>
-          {hasExecutionApproved && <span style={{ marginLeft: 8 }}>Already approved.</span>}
-        </section>
+          <div className="flex items-center gap-2 mt-4">
+            <button type="button" className="btn btn-primary" onClick={handleApprove} disabled={selectedSteps.size === 0 || approving || hasExecutionApproved}>
+              {approving ? "Approving…" : "Approve selected steps"}
+            </button>
+            {hasExecutionApproved && <span className="text-muted">Already approved.</span>}
+          </div>
+        </div>
 
-        <section>
-          <h2>Evidence</h2>
-          <p>Upload PDF or images. Uploaded evidence can be linked to Phase-G steps. No delete or edit.</p>
-          <label style={{ display: "block", marginBottom: 8 }}>
-            <span style={{ marginRight: 8 }}>Choose file (PDF or image):</span>
+        <div className="card mb-4">
+          <h2 className="card-title">Evidence</h2>
+          <p className="text-muted mb-4">Upload PDF or images. Can be linked to Phase-G steps. No edit or delete.</p>
+          <label className="label">
             <input
               type="file"
               accept={ACCEPT_EVIDENCE}
               onChange={onFileChange}
               disabled={!!uploadStatus}
+              className="input"
+              style={{ maxWidth: 320 }}
               aria-label="Upload evidence file (PDF or image)"
             />
           </label>
-          {uploadStatus && <p style={{ margin: "4px 0", color: "#6b7280" }}>{uploadStatus}</p>}
-          {openError && <p style={{ margin: "4px 0", color: "#b91c1c", fontSize: "0.9rem" }}>{openError}</p>}
-          <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid #ddd" }}>
-                <th style={{ textAlign: "left", padding: 6 }}>Evidence ID</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Filename</th>
-                <th style={{ textAlign: "left", padding: 6 }}>MIME type</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Size</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Created</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Uploader</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Virus scan</th>
-                <th style={{ textAlign: "left", padding: 6 }}>Open</th>
-              </tr>
-            </thead>
-            <tbody>
-              {evidenceList.length === 0 && (
-                <tr><td colSpan={8} style={{ padding: 8, color: "#6b7280" }}>No evidence yet.</td></tr>
-              )}
-              {evidenceList.map((ev) => (
-                <tr key={ev.evidence_id} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: 6, fontFamily: "monospace", fontSize: "0.85rem" }}>{ev.evidence_id}</td>
-                  <td style={{ padding: 6 }}>{ev.original_filename ?? "—"}</td>
-                  <td style={{ padding: 6 }}>{ev.mime_type}</td>
-                  <td style={{ padding: 6 }}>{ev.size_bytes.toLocaleString()} B</td>
-                  <td style={{ padding: 6 }}>{new Date(ev.created_at).toLocaleString()}</td>
-                  <td style={{ padding: 6 }}>{ev.uploaded_by}</td>
-                  <td style={{ padding: 6 }}>{ev.virus_scan_status ?? "—"}</td>
-                  <td style={{ padding: 6 }}>
-                    {ev.download_url ? (
-                      <a href={ev.download_url} target="_blank" rel="noopener noreferrer">Open</a>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEvidence(ev.evidence_id)}
-                        title="Open with short-lived signed URL (Auditor Desk document viewer)"
-                      >
-                        Open
-                      </button>
-                    )}
-                  </td>
+          {uploadStatus && <p className="text-muted mb-2">{uploadStatus}</p>}
+          {openError && <p className="alert alert-error mb-4">{openError}</p>}
+          <div className="table-wrap mt-4">
+            <table>
+              <thead>
+                <tr>
+                  <th>Evidence ID</th>
+                  <th>Filename</th>
+                  <th>Type</th>
+                  <th>Size</th>
+                  <th>Uploaded</th>
+                  <th>Uploader</th>
+                  <th>Virus scan</th>
+                  <th>Open</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+              </thead>
+              <tbody>
+                {evidenceList.length === 0 && (
+                  <tr><td colSpan={8} className="text-muted">No evidence yet.</td></tr>
+                )}
+                {evidenceList.map((ev) => (
+                  <tr key={ev.evidence_id}>
+                    <td style={{ fontFamily: "monospace", fontSize: "0.85rem" }}>{ev.evidence_id}</td>
+                    <td>{ev.original_filename ?? "—"}</td>
+                    <td>{ev.mime_type}</td>
+                    <td>{ev.size_bytes.toLocaleString()} B</td>
+                    <td>{new Date(ev.created_at).toLocaleString()}</td>
+                    <td>{ev.uploaded_by}</td>
+                    <td>{ev.virus_scan_status ?? "—"}</td>
+                    <td>
+                      {ev.download_url ? (
+                        <a href={ev.download_url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" style={{ padding: "2px 8px" }}>Open</a>
+                      ) : (
+                        <button type="button" className="btn btn-ghost" style={{ padding: "2px 8px" }} onClick={() => handleOpenEvidence(ev.evidence_id)} title="Open with signed URL">
+                          Open
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        <section>
-          <h2>Phase-G Mark as Sent</h2>
-          <p className="warning">{IRREVERSIBLE_WARNING}</p>
+        <div className="card mb-4">
+          <h2 className="card-title">Phase-G Mark as sent</h2>
+          <p className="warning mb-4">{IRREVERSIBLE_WARNING}</p>
           {planSteps.map((s) => {
             const alreadySent = sentStepsSet.has(s.step);
             const selected = selectedEvidenceByStep[s.step] ?? new Set<string>();
             const hasSelection = selected.size > 0;
             return (
-              <div key={s.step} style={{ marginBottom: "1rem", padding: "0.5rem 0", borderBottom: "1px solid #eee" }}>
+              <div key={s.step} style={{ marginBottom: "1rem", padding: "0.75rem 0", borderBottom: "1px solid var(--color-border)" }}>
                 <strong>{s.step}</strong>
                 {alreadySent ? (
                   <span className="badge badge-sent" style={{ marginLeft: 8 }}>Sent</span>
                 ) : (
                   <>
-                    <p style={{ margin: "6px 0 4px", fontSize: "0.9rem" }}>Select evidence for this step:</p>
+                    <p className="text-muted mb-2 mt-2">Select evidence for this step:</p>
                     <div style={{ marginLeft: 8 }}>
                       {evidenceList.length === 0 ? (
-                        <p style={{ color: "#6b7280", fontSize: "0.85rem" }}>Upload evidence above first.</p>
+                        <p className="text-subtle">Upload evidence above first.</p>
                       ) : (
                         evidenceList.map((ev) => (
-                          <label key={ev.evidence_id} style={{ display: "block", marginBottom: 4 }}>
+                          <label key={ev.evidence_id} className="flex items-center gap-2 mb-2" style={{ display: "flex", cursor: "pointer" }}>
                             <input
                               type="checkbox"
                               checked={selected.has(ev.evidence_id)}
                               onChange={() => toggleEvidenceForStep(s.step, ev.evidence_id)}
                             />
-                            <span style={{ marginLeft: 6 }}>{ev.original_filename ?? ev.evidence_id}</span>
+                            <span>{ev.original_filename ?? ev.evidence_id}</span>
                           </label>
                         ))
                       )}
                     </div>
                     <button
                       type="button"
+                      className="btn btn-secondary mt-2"
                       onClick={() => handleMarkSent(s.step)}
                       disabled={sending !== null || !hasSelection}
-                      style={{ marginTop: 6 }}
                     >
-                      {sending === s.step ? "Sending…" : "Mark as Sent"}
+                      {sending === s.step ? "Sending…" : "Mark as sent"}
                     </button>
                   </>
                 )}
               </div>
             );
           })}
-        </section>
+        </div>
 
-        <section>
-          <h2>Phase-H Automation Eligibility</h2>
+        <div className="card mb-4">
+          <h2 className="card-title">Phase-H Automation eligibility</h2>
           {(() => {
             const list = claims.automation_eligibility ?? [];
             const latest = list.length > 0 ? (list[list.length - 1].valueJson as AutomationEligibilityValue) : null;
             if (!latest) {
               return (
-                <p style={{ color: "#6b7280" }}>
-                  No eligibility result yet. Complete at least one Phase-G &quot;Mark as Sent&quot; to trigger evaluation.
+                <p className="text-muted mb-0">
+                  No eligibility result yet. Complete at least one Phase-G “Mark as sent” to trigger evaluation.
                 </p>
               );
             }
             return (
-              <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: 6, maxWidth: 560 }}>
-                <p style={{ margin: "0 0 8px" }}>
-                  <strong>Eligible:</strong> {latest.eligible === true ? "Yes" : latest.eligible === false ? "No" : "—"}
-                </p>
+              <div className="card" style={{ padding: "0.75rem 1rem", background: "var(--color-border-muted)", maxWidth: 560 }}>
+                <p className="mb-2"><strong>Eligible</strong> {latest.eligible === true ? "Yes" : latest.eligible === false ? "No" : "—"}</p>
                 {latest.evaluated_at && (
-                  <p style={{ margin: "0 0 8px", fontSize: "0.9rem", color: "#6b7280" }}>
-                    <strong>Evaluated at:</strong> {new Date(latest.evaluated_at).toLocaleString()}
+                  <p className="text-muted mb-2" style={{ fontSize: "0.9rem" }}>
+                    <strong>Evaluated at</strong> {new Date(latest.evaluated_at).toLocaleString()}
                   </p>
                 )}
                 {(latest.reasons?.length ?? 0) > 0 && (
-                  <p style={{ margin: "0 0 8px" }}>
-                    <strong>Reasons:</strong> {latest.reasons!.join("; ")}
-                  </p>
+                  <p className="mb-2"><strong>Reasons</strong> {latest.reasons!.join("; ")}</p>
                 )}
                 {(latest.blocked_by?.length ?? 0) > 0 && (
-                  <p style={{ margin: 0 }}>
-                    <strong>Blocked by:</strong> {latest.blocked_by!.join("; ")}
-                  </p>
+                  <p className="mb-0"><strong>Blocked by</strong> {latest.blocked_by!.join("; ")}</p>
                 )}
               </div>
             );
           })()}
-        </section>
+        </div>
 
-        {info && <section><p style={{ color: "#059669" }}>{info}</p></section>}
-        {error && <section><p style={{ color: "red" }}>{error}</p></section>}
+        {info && <div className="alert alert-success mb-4">{info}</div>}
+        {error && <div className="alert alert-error mb-4">{error}</div>}
       </div>
     </AdminGuard>
   );

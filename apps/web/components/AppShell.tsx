@@ -8,29 +8,42 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <Link href="/" className="app-logo">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <header className="app-header" role="banner">
+        <Link href="/" className="app-logo" aria-label="NexSupply home">
           NexSupply
         </Link>
-        <nav className="app-nav">
-          <Link href="/">홈</Link>
-          {user && <Link href="/upload">제품 분석</Link>}
-          {user && role === "admin" && <Link href="/admin">관리자</Link>}
+        <nav className="app-nav" aria-label="Main navigation">
+          <Link href="/">Home</Link>
+          {user && <Link href="/upload">Analyze product</Link>}
+          {user && role === "admin" && <Link href="/admin">Admin</Link>}
         </nav>
         <div className="app-user">
           {loading ? (
-            <span className="text-muted">로딩 중…</span>
+            <span className="text-muted" aria-live="polite">Loading…</span>
           ) : user ? (
             <>
-              <span className="text-muted">{user.email}</span>
-              <button type="button" className="btn btn-ghost" onClick={signOut}>
-                로그아웃
+              <span className="text-muted" title={user.email ?? undefined}>
+                {user.email}
+              </span>
+              <button type="button" className="btn btn-ghost" onClick={signOut} aria-label="Sign out">
+                Sign out
               </button>
             </>
           ) : null}
         </div>
       </header>
-      <main className="app-main">{children}</main>
+      <main className="app-main" id="main-content">
+        {children}
+      </main>
+      <footer className="app-footer" role="contentinfo">
+        <div className="container">
+          <p className="footer-text">
+            <Link href="/">NexSupply</Link>
+            <span className="text-subtle"> — Find 1688 factories with one photo</span>
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

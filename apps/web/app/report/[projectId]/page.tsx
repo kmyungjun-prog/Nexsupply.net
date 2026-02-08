@@ -109,14 +109,14 @@ export default function ReportPage() {
     const mime = f.type || "application/octet-stream";
     const allowed = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowed.includes(mime)) {
-      setError("PDF, JPEG, PNG, GIF, WebP만 지원합니다.");
+      setError("Only PDF, JPEG, PNG, GIF, and WebP are supported.");
       return;
     }
     if (f.size > 25 * 1024 * 1024) {
-      setError("파일 크기는 25MB 이하여야 합니다.");
+      setError("File size must be 25 MB or less.");
       return;
     }
-    setUploadStatus("준비 중…");
+    setUploadStatus("Preparing…");
     setError(null);
     try {
       const token = await getIdToken();
@@ -125,7 +125,7 @@ export default function ReportPage() {
         { original_filename: f.name, mime_type: mime, size_bytes: f.size },
         token
       );
-      setUploadStatus("업로드 중…");
+      setUploadStatus("Uploading…");
       const headers: Record<string, string> = { "Content-Type": mime, ...(initiate.upload_headers ?? {}) };
       const putRes = await fetch(initiate.upload_url, {
         method: "PUT",
@@ -133,8 +133,8 @@ export default function ReportPage() {
         body: f,
         duplex: "half",
       } as RequestInit & { duplex: string });
-      if (!putRes.ok) throw new Error(`업로드 실패: ${putRes.status}`);
-      setUploadStatus("등록 중…");
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
+      setUploadStatus("Registering…");
       const idempotencyKey = `evidence-complete:${projectId}:${initiate.gcs_path}`;
       await post(
         `/projects/${projectId}/evidence/complete`,
@@ -171,7 +171,7 @@ export default function ReportPage() {
         <div className="skeleton mb-6" style={{ height: 18, width: "55%" }} />
         <div className="skeleton mb-4" style={{ height: 140, borderRadius: "var(--radius-lg)" }} />
         <div className="skeleton" style={{ height: 100, borderRadius: "var(--radius-lg)" }} />
-        <p className="mt-4"><Link href="/" className="btn btn-ghost">홈으로</Link></p>
+        <p className="mt-4"><Link href="/" className="btn btn-ghost">Back to home</Link></p>
       </div>
     );
   }
@@ -181,7 +181,7 @@ export default function ReportPage() {
       <div className="container">
         <div className="card">
           <div className="alert alert-error">{error}</div>
-          <Link href="/" className="btn btn-secondary mt-4">홈으로</Link>
+          <Link href="/" className="btn btn-secondary mt-4">Back to home</Link>
         </div>
       </div>
     );
@@ -203,32 +203,32 @@ export default function ReportPage() {
   return (
     <div className="container-wide">
       <div className="flex items-center gap-4 mb-6">
-        <h1 className="mb-0">분석 리포트</h1>
+        <h1 className="mb-0">Analysis report</h1>
         <span className={`badge ${pending ? "badge-warning" : "badge-neutral"}`}>{project.status}</span>
       </div>
-      <p className="text-muted mb-6">프로젝트 ID: {project.id}</p>
+      <p className="text-muted mb-6">Project ID: {project.id}</p>
 
       {pending ? (
         <div className="card">
           <div className="flex items-center gap-3">
             <span className="spinner" />
-            <p className="mb-0 text-muted">분석 중입니다. 5초마다 자동으로 새로고침됩니다.</p>
+            <p className="mb-0 text-muted">Analyzing… This page will refresh automatically every 5 seconds.</p>
           </div>
         </div>
       ) : (
         <>
           {(view?.product_name ?? view?.product_name_zh) && (
             <div className="card mb-4">
-              <h3 className="card-title">제품 분석 결과</h3>
-              <p className="mb-2"><strong>제품명 (EN)</strong> {view.product_name ?? "—"}</p>
-              {view.product_name_zh && <p className="mb-2"><strong>제품명 (중국어)</strong> {view.product_name_zh}</p>}
+              <h3 className="card-title">Product analysis</h3>
+              <p className="mb-2"><strong>Product name (EN)</strong> {view.product_name ?? "—"}</p>
+              {view.product_name_zh && <p className="mb-2"><strong>Product name (Chinese)</strong> {view.product_name_zh}</p>}
               {(view.category ?? view.product_category) && (
-                <p className="mb-2"><strong>카테고리</strong> {view.category ?? view.product_category}</p>
+                <p className="mb-2"><strong>Category</strong> {view.category ?? view.product_category}</p>
               )}
-              {view.material && <p className="mb-2"><strong>소재</strong> {view.material}</p>}
-              {view.estimated_specs && <p className="mb-2"><strong>추정 스펙</strong> {view.estimated_specs}</p>}
+              {view.material && <p className="mb-2"><strong>Material</strong> {view.material}</p>}
+              {view.estimated_specs && <p className="mb-2"><strong>Estimated specs</strong> {view.estimated_specs}</p>}
               {view._analyzed_at && (
-                <p className="text-subtle mb-0">AI 분석 시각: {new Date(view._analyzed_at).toLocaleString()}</p>
+                <p className="text-subtle mb-0">AI analyzed at: {new Date(view._analyzed_at).toLocaleString()}</p>
               )}
             </div>
           )}
@@ -251,7 +251,7 @@ export default function ReportPage() {
 
           {factoryCandidates.length > 0 && (
             <div className="card mb-4">
-              <h3 className="card-title">공장 후보 (무료 미리보기)</h3>
+              <h3 className="card-title">Factory candidates (free preview)</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {factoryCandidates.map((c, i) => (
                   <div
@@ -265,15 +265,15 @@ export default function ReportPage() {
                   >
                     <p className="mb-2" style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{c.name}</p>
                     <p className="text-muted mb-2" style={{ marginBottom: "0.25rem", fontSize: "0.9375rem" }}>
-                      위치 {c.location} · MOQ {c.moq ?? "—"}
+                      Location {c.location} · MOQ {c.moq ?? "—"}
                     </p>
                     {c.price_range && (c.price_range.min != null || c.price_range.max != null) && (
                       <p className="text-muted mb-2" style={{ fontSize: "0.9375rem" }}>
-                        가격 {c.price_range.min ?? "?"}–{c.price_range.max ?? "?"} {c.price_range.currency ?? "CNY"}
+                        Price {c.price_range.min ?? "?"}–{c.price_range.max ?? "?"} {c.price_range.currency ?? "CNY"}
                       </p>
                     )}
                     <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem" }}>
-                      1688에서 보기 →
+                      View on 1688 →
                     </a>
                   </div>
                 ))}
@@ -282,23 +282,23 @@ export default function ReportPage() {
           )}
 
           <div className="alert alert-warning mb-4">
-            위 결과는 AI 추정 가설이며, 실제 공장 가격이 아닙니다.
+            Results are AI estimates only, not live factory pricing.
           </div>
 
           <div className="flex gap-2 mb-6">
             <Link href={`/blueprint-request/${projectId}`} className="btn btn-accent">
-              더 많은 공장 + AI 비교 분석 → Blueprint ($49)
+              More factories + AI comparison → Blueprint ($49)
             </Link>
             <button type="button" className="btn btn-secondary" onClick={load} disabled={loading}>
-              새로고침
+              Refresh
             </button>
           </div>
         </>
       )}
 
       <div className="card mt-6" style={{ borderTop: "1px solid var(--color-border)", paddingTop: "1.5rem" }}>
-        <h3 className="card-title">증빙 자료</h3>
-        <p className="text-muted mb-4">PDF 또는 이미지 업로드 (수정·삭제 불가)</p>
+        <h3 className="card-title">Evidence</h3>
+        <p className="text-muted mb-4">Upload PDF or images. No edit or delete.</p>
         <input
           ref={fileInputRef}
           type="file"
@@ -307,22 +307,22 @@ export default function ReportPage() {
           disabled={!!uploadStatus}
           className="input mb-2"
           style={{ maxWidth: 320 }}
-          aria-label="증빙 자료 업로드"
+          aria-label="Upload evidence"
         />
         {uploadStatus && <p className="text-muted mb-2">{uploadStatus}</p>}
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>파일명</th>
-                <th>유형</th>
-                <th>업로드 시각</th>
-                <th>바이러스 검사</th>
+                <th>Filename</th>
+                <th>Type</th>
+                <th>Uploaded</th>
+                <th>Virus scan</th>
               </tr>
             </thead>
             <tbody>
               {evidenceList.length === 0 && (
-                <tr><td colSpan={4} className="text-muted">아직 증빙 자료가 없습니다.</td></tr>
+                <tr><td colSpan={4} className="text-muted">No evidence yet.</td></tr>
               )}
               {evidenceList.map((ev) => (
                 <tr key={ev.evidence_id}>
@@ -337,7 +337,7 @@ export default function ReportPage() {
         </div>
       </div>
 
-      <p className="mt-4"><Link href="/" className="btn btn-ghost">홈으로</Link></p>
+      <p className="mt-4"><Link href="/" className="btn btn-ghost">Back to home</Link></p>
     </div>
   );
 }

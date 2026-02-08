@@ -14,7 +14,7 @@ type InitiateRes = {
   upload_expires_at: string;
 };
 
-const STEPS = ["준비 중", "업로드 중", "분석 중", "완료"] as const;
+const STEPS = ["Preparing", "Uploading", "Analyzing", "Done"] as const;
 
 export default function UploadPage() {
   const { user, getIdToken } = useAuth();
@@ -29,11 +29,11 @@ export default function UploadPage() {
     if (!user || loading) return;
     const mime = file.type || "image/jpeg";
     if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mime)) {
-      setError("JPEG, PNG, GIF, WebP만 지원합니다.");
+      setError("Only JPEG, PNG, GIF, and WebP are supported.");
       return;
     }
     if (file.size > 25 * 1024 * 1024) {
-      setError("파일 크기는 25MB 이하여야 합니다.");
+      setError("File size must be 25 MB or less.");
       return;
     }
     setLoading(true);
@@ -58,7 +58,7 @@ export default function UploadPage() {
         body: file,
         duplex: "half",
       } as RequestInit & { duplex: string });
-      if (!putRes.ok) throw new Error(`업로드 실패: ${putRes.status}`);
+      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
       setStepIndex(3);
       const idempotencyKey = `photo-complete:${initiate.project_id}:${initiate.gcs_path}`;
       await post(
@@ -84,7 +84,7 @@ export default function UploadPage() {
   const handleAnalyze = () => {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
-      setError("이미지를 선택해 주세요.");
+      setError("Please select an image.");
       return;
     }
     runWithFile(file);
@@ -108,9 +108,9 @@ export default function UploadPage() {
     return (
       <div className="container">
         <div className="card">
-          <p className="text-muted">제품 분석을 하려면 로그인해 주세요.</p>
+          <p className="text-muted">Please sign in to analyze a product.</p>
           <Link href="/" className="btn btn-secondary mt-4">
-            홈으로
+            Back to home
           </Link>
         </div>
       </div>
@@ -119,8 +119,8 @@ export default function UploadPage() {
 
   return (
     <div className="container">
-      <h1 className="mb-2">제품 사진 분석</h1>
-      <p className="text-muted mb-6">사진을 올리면 AI가 제품을 분석하고 1688 공장 후보를 추천합니다.</p>
+      <h1 className="mb-2">Analyze product photo</h1>
+      <p className="text-muted mb-6">Upload a photo and AI will analyze it and recommend 1688 factory candidates.</p>
 
       <div className="card mb-4">
         <div
@@ -132,13 +132,13 @@ export default function UploadPage() {
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
           onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
-          aria-label="이미지 드래그 또는 클릭하여 선택"
+          aria-label="Drag and drop an image or click to select"
         >
           <input
             ref={fileInputRef}
             type="file"
             accept="image/jpeg,image/png,image/gif,image/webp"
-            aria-label="제품 이미지 선택"
+            aria-label="Select product image"
             disabled={!!loading}
             style={{ display: "none" }}
           />
@@ -160,16 +160,16 @@ export default function UploadPage() {
               </div>
             </>
           ) : (
-            <p className="upload-zone-text">이미지를 여기에 끌어다 놓거나 클릭하여 선택</p>
+            <p className="upload-zone-text">Drag and drop an image here, or click to choose</p>
           )}
         </div>
 
         <div className="flex gap-2 mt-4">
           <button type="button" className="btn btn-primary" onClick={handleAnalyze} disabled={loading}>
-            {loading ? "처리 중…" : "분석 시작"}
+            {loading ? "Processing…" : "Analyze"}
           </button>
           <Link href="/" className="btn btn-secondary">
-            취소
+            Cancel
           </Link>
         </div>
 
@@ -177,7 +177,7 @@ export default function UploadPage() {
           <div className="alert alert-error mt-4">
             {error}
             <button type="button" className="btn btn-ghost mt-2" onClick={() => { setError(null); setStepIndex(0); }}>
-              다시 시도
+              Try again
             </button>
           </div>
         )}
