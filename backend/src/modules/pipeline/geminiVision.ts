@@ -96,8 +96,8 @@ export async function analyzeProductPhoto(
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     generationConfig: {
       response_mime_type: "application/json",
-      maxOutputTokens: 1024,
-      temperature: 0.2,
+      maxOutputTokens: 2048,
+      temperature: 0.4,
     },
   };
 
