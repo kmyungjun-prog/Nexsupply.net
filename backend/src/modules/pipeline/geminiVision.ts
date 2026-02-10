@@ -14,7 +14,7 @@ export type ProductAnalysis = {
   search_keywords_1688: string[];
 };
 
-const MODEL = "gemini-1.5-flash";
+const MODEL = "gemini-2.5-pro";
 const SYSTEM_PROMPT = `You are a product sourcing expert. Analyze this product photo and return a single JSON object (no markdown, no code block) with exactly these keys:
 - product_name: string (English, concise)
 - product_name_zh: string (Chinese name for 1688.com search)
