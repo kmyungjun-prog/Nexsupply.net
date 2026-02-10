@@ -88,7 +88,7 @@ export async function fetchFactoryCandidates(productNameOrCategory: string): Pro
 
   // 1688-datahub 등: 호스트별로 경로/파라미터가 다를 수 있음 (keyword 또는 query)
   const encoded = encodeURIComponent(query);
-  const url = `https://${host}/search?keyword=${encoded}&page=1`;
+  const url = `https://${host}/item_search?q=${encoded}&page=1&pageSize=20&sort=default`;
   try {
     const res = await fetch(url, {
       headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": host },
