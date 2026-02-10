@@ -37,22 +37,29 @@ async function readImageAsBase64(gcsPath: string, bucketName: string, mimeType: 
 }
 
 function parseAnalysisJson(text: string): ProductAnalysis {
-  const trimmed = text.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, "$1").trim();
-  const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-  const arr = parsed.search_keywords_1688;
-  const keywords = Array.isArray(arr)
-    ? arr.map((x) => (typeof x === "string" ? x : String(x)))
-    : typeof parsed.search_keywords_1688 === "string"
-      ? [parsed.search_keywords_1688]
-      : [];
-  return {
-    product_name: String(parsed.product_name ?? ""),
-    product_name_zh: String(parsed.product_name_zh ?? ""),
-    category: String(parsed.category ?? ""),
-    material: parsed.material != null ? String(parsed.material) : undefined,
-    estimated_specs: parsed.estimated_specs != null ? String(parsed.estimated_specs) : undefined,
-    search_keywords_1688: keywords.length ? keywords : [String(parsed.product_name_zh ?? parsed.product_name ?? "product")],
-  };
+  console.error("[GEMINI RAW]", text);
+  try {
+    const trimmed = text.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, "$1").trim();
+    console.error("[GEMINI TRIMMED]", trimmed);
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const arr = parsed.search_keywords_1688;
+    const keywords = Array.isArray(arr)
+      ? arr.map((x) => (typeof x === "string" ? x : String(x)))
+      : typeof parsed.search_keywords_1688 === "string"
+        ? [parsed.search_keywords_1688]
+        : [];
+    return {
+      product_name: String(parsed.product_name ?? ""),
+      product_name_zh: String(parsed.product_name_zh ?? ""),
+      category: String(parsed.category ?? ""),
+      material: parsed.material != null ? String(parsed.material) : undefined,
+      estimated_specs: parsed.estimated_specs != null ? String(parsed.estimated_specs) : undefined,
+      search_keywords_1688: keywords.length ? keywords : [String(parsed.product_name_zh ?? parsed.product_name ?? "product")],
+    };
+  } catch (err) {
+    console.error("[PARSE ERROR]", err);
+    throw err;
+  }
 }
 
 export async function analyzeProductPhoto(
@@ -108,6 +115,7 @@ export async function analyzeProductPhoto(
   const json = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
+  console.error("[GEMINI FULL RESPONSE]", JSON.stringify(json, null, 2));
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
   if (text == null) {
     throw new Error("Gemini Vision returned no text");
