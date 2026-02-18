@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 .next/
 dist/
 build/
@@ -9,3 +9,10 @@ out/
 !.env.example
 *.log
 .DS_Store
+
+# Local / debug / secrets — do not commit
+*.bat
+backend/check-env.bat
+backend/fix-env.bat
+backend/cloud-run-desc.txt
+cors.json
