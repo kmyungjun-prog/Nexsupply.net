@@ -23,6 +23,7 @@ export default function UploadPage() {
   const [stepIndex, setStepIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const runWithFile = async (file: File) => {
@@ -81,8 +82,14 @@ export default function UploadPage() {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setSelectedFile(file);
+    setError(null);
+  };
+
   const handleAnalyze = () => {
-    const file = fileInputRef.current?.files?.[0];
+    const file = selectedFile || fileInputRef.current?.files?.[0];
     if (!file) {
       setError("Please select an image.");
       return;
@@ -94,7 +101,10 @@ export default function UploadPage() {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) runWithFile(file);
+    if (file) {
+      setSelectedFile(file);
+      setError(null);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -140,6 +150,7 @@ export default function UploadPage() {
             accept="image/jpeg,image/png,image/gif,image/webp"
             aria-label="Select product image"
             disabled={!!loading}
+            onChange={handleFileChange}
             style={{ display: "none" }}
           />
           {loading ? (
@@ -159,6 +170,18 @@ export default function UploadPage() {
                 ))}
               </div>
             </>
+          ) : selectedFile ? (
+            <div style={{ textAlign: "center" }}>
+              <img
+                src={URL.createObjectURL(selectedFile)}
+                alt="Preview"
+                style={{ maxHeight: 120, maxWidth: "100%", borderRadius: 8, marginBottom: 8, objectFit: "contain" }}
+              />
+              <p style={{ margin: 0, fontWeight: 600, fontSize: "0.9rem" }}>{selectedFile.name}</p>
+              <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#666" }}>
+                {(selectedFile.size / 1024 / 1024).toFixed(1)} MB — Click to change
+              </p>
+            </div>
           ) : (
             <p className="upload-zone-text">Drag and drop an image here, or click to choose</p>
           )}

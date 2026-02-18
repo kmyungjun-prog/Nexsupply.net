@@ -21,7 +21,7 @@ export default function Home() {
         <div className="card" style={{ textAlign: "center", padding: "2.5rem 2rem" }}>
           <h1 style={{ marginBottom: "0.5rem" }}>Find 1688 factories with one photo</h1>
           <p className="text-muted mb-4" style={{ marginBottom: "1.5rem" }}>
-            Upload a product photo and AI will analyze it and recommend 1688 factory candidates.
+            Upload a product photo — AI analyzes it and finds matching 1688 factory candidates for free.
           </p>
           <button type="button" className="btn btn-primary" onClick={signInWithGoogle} style={{ padding: "0.75rem 1.5rem" }}>
             Sign in with Google
@@ -42,6 +42,12 @@ export default function Home() {
             <p className="text-muted" style={{ margin: 0, fontSize: "0.9375rem" }}>
               Upload a photo and get AI analysis plus 1688 factory recommendations.
             </p>
+          </div>
+        </Link>
+        <Link href="/projects" style={{ textDecoration: "none" }}>
+          <div className="card card-link">
+            <h3 style={{ marginBottom: "0.25rem" }}>My analyses</h3>
+            <p className="text-muted" style={{ margin: 0, fontSize: "0.9375rem" }}>View your past product analyses.</p>
           </div>
         </Link>
         {role === "admin" && (

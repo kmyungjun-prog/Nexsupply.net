@@ -3,6 +3,7 @@ import { ProjectStatus } from "@prisma/client";
 import { authenticate } from "../../libs/auth.js";
 import { requireIdempotencyKey } from "../../libs/idempotency.js";
 import { AppError } from "../../libs/errors.js";
+import { jobs } from "../../libs/jobs.js";
 import {
   createProject,
   listProjectsForActor,
@@ -230,6 +231,7 @@ export async function registerProjectsRoutes(app: FastifyInstance) {
             reason: { type: "string" },
             source: { type: "string", enum: ["ui", "slack", "system"] },
             idempotencyKey: { type: "string" },
+            setIsPaidBlueprint: { type: "boolean" },
           },
         },
         params: {
@@ -245,18 +247,30 @@ export async function registerProjectsRoutes(app: FastifyInstance) {
       const project = await getProjectOrThrow(id);
       assertProjectAccess(project, actor);
 
+      const body = req.body as { toStatus: string; reason?: string; source?: string; setIsPaidBlueprint?: boolean };
       const result = await transitionProject({
         projectId: project.id,
-        toStatus: (req.body as any).toStatus,
-        reason: (req.body as any).reason,
-        source: (req.body as any).source ?? "ui",
+        toStatus: body.toStatus,
+        reason: body.reason,
+        source: (body.source as any) ?? "ui",
         actor,
         idempotencyKey: req.idempotencyKey!,
         requestId: req.id,
+        setIsPaidBlueprint: body.setIsPaidBlueprint,
       });
 
-      // Phase-B: when transition to WAITING_PAYMENT, send Slack payment request notification
       const proj = result.project;
+      if (proj && !result.replayed && proj.status === ProjectStatus.BLUEPRINT_RUNNING && body.setIsPaidBlueprint) {
+        await jobs.enqueue({
+          name: "blueprint_pipeline",
+          payload: {
+            projectId: proj.id,
+            versionId: proj.activeVersionId ?? proj.id,
+            idempotencyKey: req.idempotencyKey!,
+          },
+          idempotencyKey: req.idempotencyKey!,
+        });
+      }
       if (proj && proj.status === ProjectStatus.WAITING_PAYMENT && !result.replayed && req.server.sendPaymentRequestNotification) {
         req.server.sendPaymentRequestNotification(proj.id).catch((err) => req.log.warn({ err, projectId: proj.id }, "Slack payment notification failed"));
       }

@@ -1,8 +1,10 @@
 import { randomUUID } from "crypto";
-import { ProjectStatus, type ActorRole } from "@prisma/client";
+import { ActorRole, EventSource, ProjectStatus } from "@prisma/client";
 import { db } from "../../libs/db.js";
 import { getSignedUrl } from "../../libs/storage.js";
 import { AppError } from "../../libs/errors.js";
+import { jobs } from "../../libs/jobs.js";
+import { transitionProject } from "../stateMachine/service.js";
 import { analyzeProductPhoto } from "../pipeline/geminiVision.js";
 import { fetchFactoryCandidates, createFactoryCandidateClaims } from "../pipeline/blueprint/rapidapi1688.js";
 
@@ -146,6 +148,35 @@ export async function completePhotoUpload(
     }
   } catch (err) {
     console.error("Mini pipeline (1688 search) failed:", err);
+  }
+
+  // Auto-trigger blueprint (free): ANALYZING → BLUEPRINT_RUNNING, then enqueue pipeline. Non-blocking.
+  const idempotencyKey = `auto-blueprint:${projectId}`;
+  const requestId = `request:${idempotencyKey}`;
+  try {
+    const result = await transitionProject({
+      projectId,
+      toStatus: ProjectStatus.BLUEPRINT_RUNNING,
+      reason: "Auto-trigger after photo analysis",
+      source: EventSource.system,
+      actor: { uid: "system", role: ActorRole.system },
+      idempotencyKey,
+      requestId,
+      setIsPaidBlueprint: true,
+    });
+    if (result.project && !result.replayed) {
+      await jobs.enqueue({
+        name: "blueprint_pipeline",
+        payload: {
+          projectId,
+          versionId: result.project.activeVersionId ?? projectId,
+          idempotencyKey,
+        },
+        idempotencyKey,
+      });
+    }
+  } catch (_err) {
+    // If transition or enqueue fails, project stays ANALYZING; do not throw to client.
   }
 
   return { project_id: projectId, analysis };

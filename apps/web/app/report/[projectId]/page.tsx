@@ -2,9 +2,9 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { get, post } from "@/lib/api";
+import { get } from "@/lib/api";
 
 type FactoryCandidatePreview = {
   name: string;
@@ -35,27 +35,13 @@ type ProjectReport = {
   createdAt: string;
 };
 
-type EvidenceItem = {
-  evidence_id: string;
-  original_filename: string | null;
-  mime_type: string;
-  size_bytes: number;
-  created_at: string;
-  virus_scan_status?: string;
-};
-
-const ACCEPT_EVIDENCE = "application/pdf,image/jpeg,image/png,image/gif,image/webp";
-
 export default function ReportPage() {
   const params = useParams();
   const projectId = params?.projectId as string | undefined;
   const { getIdToken } = useAuth();
   const [project, setProject] = useState<ProjectReport | null>(null);
-  const [evidenceList, setEvidenceList] = useState<EvidenceItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadProject = () => {
     if (!projectId) return;
@@ -68,24 +54,8 @@ export default function ReportPage() {
       .finally(() => setLoading(false));
   };
 
-  const loadEvidence = () => {
-    if (!projectId) return;
-    getIdToken()
-      .then((token) => get<EvidenceItem[]>(`/projects/${projectId}/evidence`, token))
-      .then(setEvidenceList)
-      .catch(() => setEvidenceList([]));
-  };
-
-  const load = () => {
-    loadProject();
-    loadEvidence();
-  };
-
   useEffect(() => {
-    if (projectId) {
-      loadProject();
-      loadEvidence();
-    }
+    if (projectId) loadProject();
   }, [projectId]);
 
   useEffect(() => {
@@ -97,69 +67,14 @@ export default function ReportPage() {
       view?.product_category != null ||
       view?.category != null ||
       (view?.estimated_margin != null && (view.estimated_margin.min != null || view.estimated_margin.max != null));
-    const pending = project.status === "ANALYZING" && !hasReport;
+    const factoryCandidates = view?.factory_candidates ?? [];
+    const pending =
+      (project.status === "ANALYZING" && !hasReport) ||
+      (project.status === "BLUEPRINT_RUNNING" && factoryCandidates.length === 0);
     if (!pending) return;
     const t = setInterval(loadProject, 5000);
     return () => clearInterval(t);
   }, [projectId, project?.status, project?.resolvedViewJsonb]);
-
-  const handleEvidenceUpload = async (file?: File | null) => {
-    const f = file ?? fileInputRef.current?.files?.[0];
-    if (!projectId || !f || uploadStatus) return;
-    const mime = f.type || "application/octet-stream";
-    const allowed = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!allowed.includes(mime)) {
-      setError("Only PDF, JPEG, PNG, GIF, and WebP are supported.");
-      return;
-    }
-    if (f.size > 25 * 1024 * 1024) {
-      setError("File size must be 25 MB or less.");
-      return;
-    }
-    setUploadStatus("Preparing…");
-    setError(null);
-    try {
-      const token = await getIdToken();
-      const initiate = await post<{ upload_url: string; upload_headers?: Record<string, string>; gcs_path: string }>(
-        `/projects/${projectId}/evidence/initiate`,
-        { original_filename: f.name, mime_type: mime, size_bytes: f.size },
-        token
-      );
-      setUploadStatus("Uploading…");
-      const headers: Record<string, string> = { "Content-Type": mime, ...(initiate.upload_headers ?? {}) };
-      const putRes = await fetch(initiate.upload_url, {
-        method: "PUT",
-        headers,
-        body: f,
-        duplex: "half",
-      } as RequestInit & { duplex: string });
-      if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
-      setUploadStatus("Registering…");
-      const idempotencyKey = `evidence-complete:${projectId}:${initiate.gcs_path}`;
-      await post(
-        `/projects/${projectId}/evidence/complete`,
-        {
-          gcs_path: initiate.gcs_path,
-          original_filename: f.name,
-          mime_type: mime,
-          size_bytes: f.size,
-        },
-        token,
-        idempotencyKey
-      );
-      setUploadStatus(null);
-      loadEvidence();
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setUploadStatus(null);
-    }
-  };
-
-  const onEvidenceFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleEvidenceUpload(file);
-  };
 
   if (!projectId) return null;
 
@@ -197,8 +112,10 @@ export default function ReportPage() {
     hasGemini ||
     category != null ||
     (margin != null && (margin.min != null || margin.max != null));
-  const pending = project.status === "ANALYZING" && !hasReport;
   const factoryCandidates = view?.factory_candidates ?? [];
+  const pending =
+    (project.status === "ANALYZING" && !hasReport) ||
+    (project.status === "BLUEPRINT_RUNNING" && factoryCandidates.length === 0);
 
   return (
     <div className="container-wide">
@@ -212,7 +129,9 @@ export default function ReportPage() {
         <div className="card">
           <div className="flex items-center gap-3">
             <span className="spinner" />
-            <p className="mb-0 text-muted">Analyzing… This page will refresh automatically every 5 seconds.</p>
+            <p className="mb-0 text-muted">
+              {project.status === "BLUEPRINT_RUNNING" ? "Getting detailed analysis…" : "Analyzing…"} This page will refresh automatically every 5 seconds.
+            </p>
           </div>
         </div>
       ) : (
@@ -285,57 +204,18 @@ export default function ReportPage() {
             Results are AI estimates only, not live factory pricing.
           </div>
 
+          <div className="card mb-4" style={{ textAlign: "center", padding: "1.5rem" }}>
+            <p className="mb-2" style={{ fontWeight: 600 }}>Want help sourcing this product?</p>
+            <a href="mailto:outreach@nexsupply.net" className="btn btn-accent">Contact us →</a>
+          </div>
+
           <div className="flex gap-2 mb-6">
-            <Link href={`/blueprint-request/${projectId}`} className="btn btn-accent">
-              More factories + AI comparison → Blueprint ($49)
-            </Link>
-            <button type="button" className="btn btn-secondary" onClick={load} disabled={loading}>
+            <button type="button" className="btn btn-secondary" onClick={loadProject} disabled={loading}>
               Refresh
             </button>
           </div>
         </>
       )}
-
-      <div className="card mt-6" style={{ borderTop: "1px solid var(--color-border)", paddingTop: "1.5rem" }}>
-        <h3 className="card-title">Evidence</h3>
-        <p className="text-muted mb-4">Upload PDF or images. No edit or delete.</p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT_EVIDENCE}
-          onChange={onEvidenceFileChange}
-          disabled={!!uploadStatus}
-          className="input mb-2"
-          style={{ maxWidth: 320 }}
-          aria-label="Upload evidence"
-        />
-        {uploadStatus && <p className="text-muted mb-2">{uploadStatus}</p>}
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Filename</th>
-                <th>Type</th>
-                <th>Uploaded</th>
-                <th>Virus scan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {evidenceList.length === 0 && (
-                <tr><td colSpan={4} className="text-muted">No evidence yet.</td></tr>
-              )}
-              {evidenceList.map((ev) => (
-                <tr key={ev.evidence_id}>
-                  <td>{ev.original_filename ?? "—"}</td>
-                  <td>{ev.mime_type}</td>
-                  <td>{new Date(ev.created_at).toLocaleString()}</td>
-                  <td>{ev.virus_scan_status ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       <p className="mt-4"><Link href="/" className="btn btn-ghost">Back to home</Link></p>
     </div>
