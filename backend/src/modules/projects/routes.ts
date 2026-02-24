@@ -96,13 +96,22 @@ export async function registerProjectsRoutes(app: FastifyInstance) {
             mime_type: { type: "string" },
             size_bytes: { type: "number" },
             original_filename: { type: "string" },
+            destination_city: { type: "string" },
+            quantity: { type: "number" },
           },
         },
       },
     },
     async (req) => {
       const { id: projectId } = req.params as { id: string };
-      const body = req.body as { gcs_path: string; mime_type: string; size_bytes: number; original_filename?: string };
+      const body = req.body as {
+        gcs_path: string;
+        mime_type: string;
+        size_bytes: number;
+        original_filename?: string;
+        destination_city?: string;
+        quantity?: number;
+      };
       try {
         const result = await completePhotoUpload(projectId, body, req.auth!.uid);
         if (!result) throw new AppError({ statusCode: 404, code: "NOT_FOUND", message: "Project not found or invalid" });

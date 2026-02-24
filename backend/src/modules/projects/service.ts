@@ -6,7 +6,8 @@ import { AppError } from "../../libs/errors.js";
 import { jobs } from "../../libs/jobs.js";
 import { transitionProject } from "../stateMachine/service.js";
 import { analyzeProductPhoto } from "../pipeline/geminiVision.js";
-import { fetchFactoryCandidates, createFactoryCandidateClaims } from "../pipeline/blueprint/rapidapi1688.js";
+import { createFactoryCandidateClaims } from "../pipeline/blueprint/rapidapi1688.js";
+import { fetchFullSourcingJourney } from "../pipeline/blueprint/serpapi.js";
 
 export type Actor = { uid: string; role: ActorRole };
 
@@ -70,7 +71,14 @@ export async function initiatePhotoUpload(ownerUserId: string, mimeType: string)
 
 export async function completePhotoUpload(
   projectId: string,
-  body: { gcs_path: string; mime_type: string; size_bytes: number; original_filename?: string },
+  body: {
+    gcs_path: string;
+    mime_type: string;
+    size_bytes: number;
+    original_filename?: string;
+    destination_city?: string;
+    quantity?: number;
+  },
   uid: string
 ) {
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, ownerUserId: true } });
@@ -78,6 +86,9 @@ export async function completePhotoUpload(
   if (!body.gcs_path.startsWith(`projects/${projectId}/photo/`)) return null;
   if (body.size_bytes > PHOTO_MAX_SIZE_BYTES) return null;
   if (!(PHOTO_ALLOWED_MIME as readonly string[]).includes(body.mime_type)) return null;
+
+  const destinationCity = body.destination_city?.trim() || "USA";
+  const quantity = typeof body.quantity === "number" && body.quantity > 0 ? body.quantity : 500;
 
   await db.evidenceFile.create({
     data: {
@@ -95,7 +106,53 @@ export async function completePhotoUpload(
   if (!bucketName) {
     throw new AppError({ statusCode: 500, code: "CONFIG", message: "GCS_BUCKET_NAME is not set" });
   }
-  const analysis = await analyzeProductPhoto(body.gcs_path, bucketName, body.mime_type);
+
+  const analysis = await analyzeProductPhoto(body.gcs_path, bucketName, body.mime_type, destinationCity, quantity);
+
+  const keyword = analysis.search_keywords_1688?.[0] ?? analysis.product_name_zh ?? analysis.product_name ?? "";
+  let imageUrl = "";
+  try {
+    imageUrl = await getSignedUrl({
+      action: "read",
+      gcsPath: body.gcs_path,
+      expiresInSeconds: 3600,
+    });
+  } catch (_e) {
+    // SerpApi Lens will be skipped if no URL
+  }
+
+  const journey = await fetchFullSourcingJourney({
+    imageUrl,
+    keyword,
+    sourcingRegion: analysis.recommended_sourcing_region,
+    destinationCity,
+    shippingMethod: analysis.shipping_method,
+    hintHsCode: analysis.hs_code_hint,
+  });
+
+  const versionId = randomUUID();
+  await db.project.update({
+    where: { id: projectId },
+    data: { activeVersionId: versionId },
+  });
+
+  if (journey.step1_sourcing.length > 0) {
+    await createFactoryCandidateClaims(
+      projectId,
+      versionId,
+      `auto:${projectId}`,
+      journey.step1_sourcing,
+      `photo-complete:${projectId}`
+    );
+  }
+
+  const factoryCandidatesPreview = journey.step1_sourcing.slice(0, 5).map((c) => ({
+    name: c.factory_name,
+    location: c.location ?? "—",
+    moq: c.moq,
+    price_range: c.price_range,
+    url: c.source_url,
+  }));
 
   const resolvedViewJsonb = {
     product_name: analysis.product_name,
@@ -104,51 +161,24 @@ export async function completePhotoUpload(
     material: analysis.material,
     estimated_specs: analysis.estimated_specs,
     search_keywords_1688: analysis.search_keywords_1688,
+    recommended_sourcing_region: analysis.recommended_sourcing_region,
+    hs_code_hint: analysis.hs_code_hint,
+    shipping_method: analysis.shipping_method,
+    certifications_required: analysis.certifications_required,
+    special_notes: analysis.special_notes,
     _source: "gemini_vision",
     _analyzed_at: new Date().toISOString(),
+    factory_candidates: factoryCandidatesPreview,
+    step1_sourcing: journey.step1_sourcing,
+    step2_qc_packaging: journey.step2_qc_packaging,
+    step3_forwarding: journey.step3_forwarding,
+    step4_customs: journey.step4_customs,
+    step5_inland: journey.step5_inland,
   };
   await db.project.update({
     where: { id: projectId },
     data: { resolvedViewJsonb: resolvedViewJsonb as object, resolvedViewUpdatedAt: new Date() },
   });
-
-  // 무료 미니 파이프라인: 1688 검색만 실행 (최대 3개 후보를 resolvedViewJsonb에 저장)
-  try {
-    const searchQuery =
-      analysis.search_keywords_1688?.[0] ?? analysis.product_name_zh ?? analysis.product_name ?? "";
-    const candidates = await fetchFactoryCandidates(searchQuery);
-    if (candidates.length > 0) {
-      const versionId = randomUUID();
-      await db.project.update({
-        where: { id: projectId },
-        data: { activeVersionId: versionId },
-      });
-      await createFactoryCandidateClaims(
-        projectId,
-        versionId,
-        `auto:${projectId}`,
-        candidates,
-        `photo-complete:${projectId}`
-      );
-      const factoryCandidatesPreview = candidates.slice(0, 3).map((c) => ({
-        name: c.factory_name,
-        location: c.location ?? "—",
-        moq: c.moq,
-        price_range: c.price_range,
-        url: c.source_url,
-      }));
-      const updatedView = {
-        ...resolvedViewJsonb,
-        factory_candidates: factoryCandidatesPreview,
-      };
-      await db.project.update({
-        where: { id: projectId },
-        data: { resolvedViewJsonb: updatedView as object, resolvedViewUpdatedAt: new Date() },
-      });
-    }
-  } catch (err) {
-    console.error("Mini pipeline (1688 search) failed:", err);
-  }
 
   // Auto-trigger blueprint (free): ANALYZING → BLUEPRINT_RUNNING, then enqueue pipeline. Non-blocking.
   const idempotencyKey = `auto-blueprint:${projectId}`;

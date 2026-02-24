@@ -24,6 +24,8 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [destinationCity, setDestinationCity] = useState("");
+  const [quantity, setQuantity] = useState<number>(500);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const runWithFile = async (file: File) => {
@@ -69,6 +71,8 @@ export default function UploadPage() {
           mime_type: mime,
           size_bytes: file.size,
           original_filename: file.name,
+          destination_city: destinationCity.trim() || "USA",
+          quantity: quantity || 500,
         },
         token,
         idempotencyKey
@@ -185,6 +189,28 @@ export default function UploadPage() {
           ) : (
             <p className="upload-zone-text">Drag and drop an image here, or click to choose</p>
           )}
+        </div>
+
+        <div className="flex flex-col gap-2 mt-4" style={{ maxWidth: 320 }}>
+          <input
+            type="text"
+            placeholder="Destination city (e.g. New York, Seoul)"
+            value={destinationCity}
+            onChange={(e) => setDestinationCity(e.target.value)}
+            className="input"
+            style={{ width: "100%" }}
+            disabled={!!loading}
+          />
+          <input
+            type="number"
+            placeholder="Expected quantity (units)"
+            value={quantity}
+            onChange={(e) => setQuantity(Number(e.target.value) || 500)}
+            className="input"
+            style={{ width: "100%" }}
+            min={1}
+            disabled={!!loading}
+          />
         </div>
 
         <div className="flex gap-2 mt-4">

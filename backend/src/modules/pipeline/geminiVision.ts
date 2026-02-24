@@ -12,16 +12,29 @@ export type ProductAnalysis = {
   material?: string;
   estimated_specs?: string;
   search_keywords_1688: string[];
+  recommended_sourcing_region: string;
+  hs_code_hint: string;
+  shipping_method: "FCL" | "LCL" | "EXPRESS" | "AIR";
+  certifications_required?: string[];
+  special_notes?: string;
 };
 
-const MODEL = "gemini-2.5-pro";
-const SYSTEM_PROMPT = `You are a product sourcing expert. Analyze this product photo and return a single JSON object (no markdown, no code block) with exactly these keys:
+function buildSystemPrompt(destinationCity: string, quantity: number): string {
+  return `You are an expert in Chinese manufacturing and international trade logistics.
+Analyze this product photo and return a single JSON object (no markdown, no code block) with exactly these keys:
+
 - product_name: string (English, concise)
 - product_name_zh: string (Chinese name for 1688.com search)
 - category: string (e.g. electronics, apparel, home goods)
 - material: string or null (if identifiable)
 - estimated_specs: string or null (brief specs if visible)
-- search_keywords_1688: array of 3-5 Chinese keywords for searching on 1688.com`;
+- search_keywords_1688: array of 3-5 Chinese keywords for 1688.com
+- recommended_sourcing_region: string (best Chinese city/region to source this product, e.g. "Yiwu, Zhejiang" or "Shenzhen, Guangdong")
+- hs_code_hint: string (approximate HS code and category, e.g. "6110 - Jerseys, pullovers (knitted)")
+- shipping_method: one of "FCL" | "LCL" | "EXPRESS" | "AIR" based on quantity ${quantity} units to ${destinationCity}
+- certifications_required: array of certifications needed for ${destinationCity} market (e.g. ["CE", "FCC", "FDA"]) or empty array
+- special_notes: string or null (any import restrictions, seasonal considerations, etc.)`;
+}
 
 function getStorageClient(): Storage {
   return new Storage();
@@ -48,6 +61,11 @@ function parseAnalysisJson(text: string): ProductAnalysis {
       : typeof parsed.search_keywords_1688 === "string"
         ? [parsed.search_keywords_1688]
         : [];
+    const certs = parsed.certifications_required;
+    const certsArr = Array.isArray(certs) ? certs.map((x) => String(x)) : [];
+    const shipping = String(parsed.shipping_method ?? "LCL").toUpperCase();
+    const validShipping = ["FCL", "LCL", "EXPRESS", "AIR"].includes(shipping) ? (shipping as ProductAnalysis["shipping_method"]) : "LCL";
+
     return {
       product_name: String(parsed.product_name ?? ""),
       product_name_zh: String(parsed.product_name_zh ?? ""),
@@ -55,6 +73,11 @@ function parseAnalysisJson(text: string): ProductAnalysis {
       material: parsed.material != null ? String(parsed.material) : undefined,
       estimated_specs: parsed.estimated_specs != null ? String(parsed.estimated_specs) : undefined,
       search_keywords_1688: keywords.length ? keywords : [String(parsed.product_name_zh ?? parsed.product_name ?? "product")],
+      recommended_sourcing_region: String(parsed.recommended_sourcing_region ?? "Guangdong, China"),
+      hs_code_hint: String(parsed.hs_code_hint ?? ""),
+      shipping_method: validShipping,
+      certifications_required: certsArr.length ? certsArr : undefined,
+      special_notes: parsed.special_notes != null ? String(parsed.special_notes) : undefined,
     };
   } catch (err) {
     console.error("[PARSE ERROR]", err);
@@ -65,7 +88,9 @@ function parseAnalysisJson(text: string): ProductAnalysis {
 export async function analyzeProductPhoto(
   gcsPath: string,
   bucketName: string,
-  mimeType: string = "image/jpeg"
+  mimeType: string = "image/jpeg",
+  destinationCity: string = "USA",
+  quantity: number = 500
 ): Promise<ProductAnalysis> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
@@ -76,7 +101,7 @@ export async function analyzeProductPhoto(
   }
 
   const { data, mimeType: mime } = await readImageAsBase64(gcsPath, bucketName, mimeType);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${encodeURIComponent(key)}`;
 
   const body = {
     contents: [
@@ -93,7 +118,7 @@ export async function analyzeProductPhoto(
         ],
       },
     ],
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    system_instruction: { parts: [{ text: buildSystemPrompt(destinationCity, quantity) }] },
     generationConfig: {
       response_mime_type: "application/json",
       maxOutputTokens: 2048,
