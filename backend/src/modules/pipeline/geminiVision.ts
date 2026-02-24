@@ -49,40 +49,63 @@ async function readImageAsBase64(gcsPath: string, bucketName: string, mimeType: 
   return { data, mimeType: mimeType || "image/jpeg" };
 }
 
-function parseAnalysisJson(text: string): ProductAnalysis {
-  console.error("[GEMINI RAW]", text);
-  try {
-    const trimmed = text.replace(/^[\s\S]*?(\{[\s\S]*\})[\s\S]*$/, "$1").trim();
-    console.error("[GEMINI TRIMMED]", trimmed);
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-    const arr = parsed.search_keywords_1688;
-    const keywords = Array.isArray(arr)
-      ? arr.map((x) => (typeof x === "string" ? x : String(x)))
-      : typeof parsed.search_keywords_1688 === "string"
-        ? [parsed.search_keywords_1688]
-        : [];
-    const certs = parsed.certifications_required;
-    const certsArr = Array.isArray(certs) ? certs.map((x) => String(x)) : [];
-    const shipping = String(parsed.shipping_method ?? "LCL").toUpperCase();
-    const validShipping = ["FCL", "LCL", "EXPRESS", "AIR"].includes(shipping) ? (shipping as ProductAnalysis["shipping_method"]) : "LCL";
+function parseAnalysisJson(raw: string): Record<string, unknown> {
+  let text = raw.trim();
+  text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
 
-    return {
-      product_name: String(parsed.product_name ?? ""),
-      product_name_zh: String(parsed.product_name_zh ?? ""),
-      category: String(parsed.category ?? ""),
-      material: parsed.material != null ? String(parsed.material) : undefined,
-      estimated_specs: parsed.estimated_specs != null ? String(parsed.estimated_specs) : undefined,
-      search_keywords_1688: keywords.length ? keywords : [String(parsed.product_name_zh ?? parsed.product_name ?? "product")],
-      recommended_sourcing_region: String(parsed.recommended_sourcing_region ?? "Guangdong, China"),
-      hs_code_hint: String(parsed.hs_code_hint ?? ""),
-      shipping_method: validShipping,
-      certifications_required: certsArr.length ? certsArr : undefined,
-      special_notes: parsed.special_notes != null ? String(parsed.special_notes) : undefined,
-    };
-  } catch (err) {
-    console.error("[PARSE ERROR]", err);
-    throw err;
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {}
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {}
   }
+
+  if (start !== -1) {
+    let partial = text.slice(start);
+    const quoteCount = (partial.match(/(?<!\\)"/g) ?? []).length;
+    if (quoteCount % 2 !== 0) partial += '"';
+    const opens = (partial.match(/[\[{]/g) ?? []).length;
+    const closes = (partial.match(/[\]}]/g) ?? []).length;
+    for (let i = 0; i < opens - closes; i++) partial += "}";
+    try {
+      return JSON.parse(partial) as Record<string, unknown>;
+    } catch {}
+  }
+
+  console.warn("parseAnalysisJson: all parse attempts failed, returning empty object");
+  return {};
+}
+
+function toProductAnalysis(parsed: Record<string, unknown>): ProductAnalysis {
+  const arr = parsed.search_keywords_1688;
+  const keywords = Array.isArray(arr)
+    ? arr.map((x) => (typeof x === "string" ? x : String(x)))
+    : typeof parsed.search_keywords_1688 === "string"
+      ? [parsed.search_keywords_1688]
+      : [];
+  const certs = parsed.certifications_required;
+  const certsArr = Array.isArray(certs) ? certs.map((x) => String(x)) : [];
+  const shipping = String(parsed.shipping_method ?? "LCL").toUpperCase();
+  const validShipping = ["FCL", "LCL", "EXPRESS", "AIR"].includes(shipping) ? (shipping as ProductAnalysis["shipping_method"]) : "LCL";
+
+  return {
+    product_name: String(parsed.product_name ?? ""),
+    product_name_zh: String(parsed.product_name_zh ?? ""),
+    category: String(parsed.category ?? ""),
+    material: parsed.material != null ? String(parsed.material) : undefined,
+    estimated_specs: parsed.estimated_specs != null ? String(parsed.estimated_specs) : undefined,
+    search_keywords_1688: keywords.length ? keywords : [String(parsed.product_name_zh ?? parsed.product_name ?? "product")],
+    recommended_sourcing_region: String(parsed.recommended_sourcing_region ?? "Guangdong, China"),
+    hs_code_hint: String(parsed.hs_code_hint ?? ""),
+    shipping_method: validShipping,
+    certifications_required: certsArr.length ? certsArr : undefined,
+    special_notes: parsed.special_notes != null ? String(parsed.special_notes) : undefined,
+  };
 }
 
 export async function analyzeProductPhoto(
@@ -146,5 +169,5 @@ export async function analyzeProductPhoto(
     throw new Error("Gemini Vision returned no text");
   }
 
-  return parseAnalysisJson(text);
+  return toProductAnalysis(parseAnalysisJson(text));
 }

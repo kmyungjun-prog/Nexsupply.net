@@ -14,9 +14,11 @@ function initFirebaseAdminOnce() {
   if (admin.apps.length > 0) return;
 
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (serviceAccountJson && typeof serviceAccountJson === "string") {
+  if (serviceAccountJson) {
     try {
-      const sa = JSON.parse(serviceAccountJson) as Record<string, unknown> & { project_id?: string };
+      const sa = JSON.parse(
+        serviceAccountJson.replace(/\\n/g, "\n") // 이중 이스케이프 복원
+      ) as Record<string, unknown> & { project_id?: string };
       admin.initializeApp({
         projectId: (sa.project_id as string) ?? process.env.FIREBASE_PROJECT_ID,
         credential: admin.credential.cert(sa as admin.ServiceAccount),
