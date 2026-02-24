@@ -21,19 +21,26 @@ export type ProductAnalysis = {
 
 function buildSystemPrompt(destinationCity: string, quantity: number): string {
   return `You are an expert in Chinese manufacturing and international trade logistics.
-Analyze this product photo and return a single JSON object (no markdown, no code block) with exactly these keys:
+Analyze this product photo and return a single JSON object with exactly these keys:
 
-- product_name: string (English, concise)
-- product_name_zh: string (Chinese name for 1688.com search)
-- category: string (e.g. electronics, apparel, home goods)
-- material: string or null (if identifiable)
-- estimated_specs: string or null (brief specs if visible)
-- search_keywords_1688: array of 3-5 Chinese keywords for 1688.com
-- recommended_sourcing_region: string (best Chinese city/region to source this product, e.g. "Yiwu, Zhejiang" or "Shenzhen, Guangdong")
-- hs_code_hint: string (approximate HS code and category, e.g. "6110 - Jerseys, pullovers (knitted)")
-- shipping_method: one of "FCL" | "LCL" | "EXPRESS" | "AIR" based on quantity ${quantity} units to ${destinationCity}
-- certifications_required: array of certifications needed for ${destinationCity} market (e.g. ["CE", "FCC", "FDA"]) or empty array
-- special_notes: string or null (any import restrictions, seasonal considerations, etc.)`;
+{
+  "product_name": "영어 제품명",
+  "product_name_zh": "중국어 제품명",
+  "category": "카테고리",
+  "material": "소재",
+  "search_keywords_1688": ["키워드1", "키워드2"],
+  "recommended_sourcing_region": "Yiwu, Zhejiang",
+  "hs_code_hint": "대략적인 HS코드",
+  "shipping_method": "LCL",
+  "certifications_required": ["CE"],
+  "special_notes": "주의사항"
+}
+
+- shipping_method: one of "FCL" | "LCL" | "EXPRESS" | "AIR" based on quantity ${quantity} units to ${destinationCity}.
+- certifications_required: array for ${destinationCity} market (e.g. ["CE", "FCC"]) or empty array [].
+- Use null for optional fields if unknown.
+
+Return ONLY valid JSON. No explanation. No markdown. Keep all string values under 100 characters.`;
 }
 
 function getStorageClient(): Storage {
@@ -144,8 +151,8 @@ export async function analyzeProductPhoto(
     system_instruction: { parts: [{ text: buildSystemPrompt(destinationCity, quantity) }] },
     generationConfig: {
       response_mime_type: "application/json",
-      maxOutputTokens: 2048,
-      temperature: 0.4,
+      maxOutputTokens: 1024,
+      temperature: 0.1,
     },
   };
 
