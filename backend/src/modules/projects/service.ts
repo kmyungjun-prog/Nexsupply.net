@@ -146,12 +146,22 @@ export async function completePhotoUpload(
     );
   }
 
-  const factoryCandidatesPreview = journey.step1_sourcing.slice(0, 5).map((c) => ({
+  // Stamp Gemini-estimated price/MOQ onto each factory candidate as AI-backed evidence
+  const step1WithEstimate = journey.step1_sourcing.map((c) => ({
+    ...c,
+    price_range: analysis.factory_price_range
+      ? { min: analysis.factory_price_range.min, max: analysis.factory_price_range.max, currency: analysis.factory_price_range.currency }
+      : c.price_range,
+    moq: analysis.typical_moq ?? c.moq,
+  }));
+
+  const factoryCandidatesPreview = step1WithEstimate.slice(0, 5).map((c) => ({
     name: c.factory_name,
     location: c.location ?? "—",
     moq: c.moq,
     price_range: c.price_range,
     url: c.source_url,
+    platform: c.platform,
   }));
 
   const resolvedViewJsonb = {
@@ -166,10 +176,12 @@ export async function completePhotoUpload(
     shipping_method: analysis.shipping_method,
     certifications_required: analysis.certifications_required,
     special_notes: analysis.special_notes,
+    factory_price_range: analysis.factory_price_range,
+    typical_moq: analysis.typical_moq,
     _source: "gemini_vision",
     _analyzed_at: new Date().toISOString(),
     factory_candidates: factoryCandidatesPreview,
-    step1_sourcing: journey.step1_sourcing,
+    step1_sourcing: step1WithEstimate,
     step2_qc_packaging: journey.step2_qc_packaging,
     step3_forwarding: journey.step3_forwarding,
     step4_customs: journey.step4_customs,

@@ -6,6 +6,7 @@ import {
   createFactoryCandidateClaims,
   fetchFactoryCandidates,
   getProductOrCategoryFromProject,
+  getGeminiPriceEstimateFromProject,
 } from "./rapidapi1688.js";
 import {
   createDocumentExtractedClaims,
@@ -70,10 +71,17 @@ export async function runBlueprintPipeline(
     let documentsOcr = 0;
 
     const productOrCategory = await getProductOrCategoryFromProject(projectId);
+    const geminiEstimate = await getGeminiPriceEstimateFromProject(projectId);
     const candidates = await fetchFactoryCandidates(productOrCategory);
-    if (candidates.length > 0) {
-      await createFactoryCandidateClaims(projectId, effectiveVersionId, idempotencyKey, candidates, requestId);
-      factoriesCreated = candidates.length;
+    // Stamp Gemini-estimated price/MOQ onto each candidate as evidence backing
+    const candidatesWithEstimate = candidates.map((c) => ({
+      ...c,
+      price_range: geminiEstimate.factory_price_range ?? c.price_range,
+      moq: geminiEstimate.typical_moq ?? c.moq,
+    }));
+    if (candidatesWithEstimate.length > 0) {
+      await createFactoryCandidateClaims(projectId, effectiveVersionId, idempotencyKey, candidatesWithEstimate, requestId);
+      factoriesCreated = candidatesWithEstimate.length;
     }
 
     const evidenceFiles = await db.evidenceFile.findMany({

@@ -14,6 +14,11 @@ export type FactoryCandidate = {
 
 const ACTOR_SYSTEM = { uid: "system", role: ActorRole.system };
 
+export type GeminiPriceEstimate = {
+  factory_price_range?: { min: number; max: number; currency: string; unit: string };
+  typical_moq?: string;
+};
+
 export async function getProductOrCategoryFromProject(projectId: string): Promise<string> {
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -29,6 +34,31 @@ export async function getProductOrCategoryFromProject(projectId: string): Promis
   if (view.product_name && typeof view.product_name === "string") return view.product_name;
   if (view.category && typeof view.category === "string") return view.category;
   return "";
+}
+
+export async function getGeminiPriceEstimateFromProject(projectId: string): Promise<GeminiPriceEstimate> {
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    select: { resolvedViewJsonb: true },
+  });
+  const view = project?.resolvedViewJsonb as Record<string, unknown> | null | undefined;
+  if (!view || typeof view !== "object") return {};
+
+  const priceRange = view.factory_price_range;
+  const moq = view.typical_moq;
+
+  return {
+    factory_price_range:
+      priceRange != null && typeof priceRange === "object"
+        ? {
+            min: Number((priceRange as Record<string, unknown>).min ?? 0),
+            max: Number((priceRange as Record<string, unknown>).max ?? 0),
+            currency: String((priceRange as Record<string, unknown>).currency ?? "USD"),
+            unit: String((priceRange as Record<string, unknown>).unit ?? "per piece"),
+          }
+        : undefined,
+    typical_moq: moq != null ? String(moq) : undefined,
+  };
 }
 
 function getStubCandidates(query: string): FactoryCandidate[] {

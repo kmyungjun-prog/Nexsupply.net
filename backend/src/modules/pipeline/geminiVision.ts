@@ -17,6 +17,8 @@ export type ProductAnalysis = {
   shipping_method: "FCL" | "LCL" | "EXPRESS" | "AIR";
   certifications_required?: string[];
   special_notes?: string;
+  factory_price_range?: { min: number; max: number; currency: string; unit: string };
+  typical_moq?: string;
 };
 
 function buildSystemPrompt(destinationCity: string, quantity: number): string {
@@ -33,11 +35,15 @@ Analyze this product photo and return a single JSON object with exactly these ke
   "hs_code_hint": "대략적인 HS코드",
   "shipping_method": "LCL",
   "certifications_required": ["CE"],
-  "special_notes": "주의사항"
+  "special_notes": "주의사항",
+  "factory_price_range": { "min": 1.5, "max": 4.0, "currency": "USD", "unit": "per piece" },
+  "typical_moq": "500 pcs"
 }
 
 - shipping_method: one of "FCL" | "LCL" | "EXPRESS" | "AIR" based on quantity ${quantity} units to ${destinationCity}.
 - certifications_required: array for ${destinationCity} market (e.g. ["CE", "FCC"]) or empty array [].
+- factory_price_range: estimated FOB factory price range in USD based on your knowledge of Chinese manufacturing costs for this product type and material.
+- typical_moq: typical minimum order quantity for this product category on 1688 (e.g. "500 pcs", "1000 pcs", "1 carton").
 - Use null for optional fields if unknown.
 
 Return ONLY valid JSON. No explanation. No markdown. Keep all string values under 100 characters.`;
@@ -112,6 +118,16 @@ function toProductAnalysis(parsed: Record<string, unknown>): ProductAnalysis {
     shipping_method: validShipping,
     certifications_required: certsArr.length ? certsArr : undefined,
     special_notes: parsed.special_notes != null ? String(parsed.special_notes) : undefined,
+    factory_price_range:
+      parsed.factory_price_range != null && typeof parsed.factory_price_range === "object"
+        ? {
+            min: Number((parsed.factory_price_range as Record<string, unknown>).min ?? 0),
+            max: Number((parsed.factory_price_range as Record<string, unknown>).max ?? 0),
+            currency: String((parsed.factory_price_range as Record<string, unknown>).currency ?? "USD"),
+            unit: String((parsed.factory_price_range as Record<string, unknown>).unit ?? "per piece"),
+          }
+        : undefined,
+    typical_moq: parsed.typical_moq != null ? String(parsed.typical_moq) : undefined,
   };
 }
 
@@ -131,7 +147,7 @@ export async function analyzeProductPhoto(
   }
 
   const { data, mimeType: mime } = await readImageAsBase64(gcsPath, bucketName, mimeType);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
 
   const body = {
     contents: [
