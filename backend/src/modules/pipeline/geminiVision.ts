@@ -131,7 +131,7 @@ export async function analyzeProductPhoto(
   }
 
   const { data, mimeType: mime } = await readImageAsBase64(gcsPath, bucketName, mimeType);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${encodeURIComponent(key)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
 
   const body = {
     contents: [
